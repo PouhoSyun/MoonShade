@@ -1,0 +1,15 @@
+{
+  "name": "moonshade",
+  "version": "0.1.0",
+  "description": "MoonShade 月影：小型问卷匹配交友平台",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "NODE_ENV=development node server.mjs",
+    "test:email": "node scripts/test-email.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>月影 MoonShade</title>
+    <meta name="description" content="MoonShade 月影，PKU校内交友社区。" />
+    <link rel="stylesheet" href="/styles.css?v=20260715-home-card-links" />
+  </head>
+  <body>
+    <header class="topbar" aria-label="主导航">
+      <a class="brand" href="#home" data-nav="home">
+        <span class="brand-dot"></span>
+        <span>
+          <strong>MoonShade</strong>
+          <small>月影</small>
+        </span>
+      </a>
+      <nav>
+        <button class="nav-button is-active" data-nav="home" title="首页">⌂ <span>首页</span></button>
+        <button class="nav-button" data-nav="dashboard" title="状态">◌ <span>状态</span></button>
+        <button class="nav-button" data-nav="survey" title="问卷">▤ <span>问卷</span></button>
+        <button class="nav-button" data-nav="results" title="结果">◇ <span>结果</span></button>
+        <button class="nav-button logout-nav" type="button" data-force-logout hidden>退出</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="home" class="view hero-view is-visible">
+        <div class="login-hero-art">
+          <div class="hero-copy">
+            <p class="eyebrow">PKU 校内交友社区</p>
+            <h1>月影 MoonShade 0.1.0</h1>
+            <p>用同一轮月的清影，环抱认真对待彼此的人。</p>
+          </div>
+          <div class="hero-countdown">
+            <p class="round-label">下次匹配参考时间</p>
+            <div class="countdown" data-countdown>-- 天 -- 时 -- 分 -- 秒</div>
+            <p class="round-note" data-round-note>匹配频率会随画像分布浮动</p>
+          </div>
+        </div>
+        <aside class="home-login-panel">
+          <section class="auth-panel" data-auth-panel>
+            <div>
+              <strong>登入验证</strong>
+              <p data-auth-status>请输入PKU学号邮箱，完成滑动验证后继续。</p>
+            </div>
+            <div class="auth-controls">
+              <input name="email" data-email-input placeholder="邮箱即账号" autocomplete="email" />
+              <div class="slide-verify" data-slide-verify>
+                <div class="slide-track">
+                  <span data-slide-fill></span>
+                  <button type="button" class="slide-handle" data-slide-handle aria-label="拖动完成安全验证">»</button>
+                  <em data-slide-label>按住滑块，拖到最右边</em>
+                </div>
+              </div>
+              <div class="auth-mode" data-login-mode hidden>
+                <input name="loginPassword" data-login-password type="password" placeholder="输入密码" autocomplete="current-password" />
+                <button class="secondary-action" type="button" data-login-button>登录</button>
+              </div>
+              <div class="auth-mode" data-register-mode hidden>
+                <button class="secondary-action" type="button" data-request-code>发送验证码</button>
+                <input name="code" data-code-input placeholder="6 位验证码" inputmode="numeric" />
+                <input name="registerPassword" data-register-password type="password" placeholder="设置密码（至少 8 位）" autocomplete="new-password" />
+                <button class="secondary-action" type="button" data-verify-code>注册并登录</button>
+              </div>
+              <div class="local-log" data-local-log hidden></div>
+            </div>
+          </section>
+          <section class="entry-panel home-entry" data-home-entry hidden>
+            <p class="eyebrow">Welcome Back</p>
+            <h2>已登录</h2>
+            <p data-home-email>可以继续填写或更新问卷。</p>
+            <a class="primary-action button-link" href="#survey" data-nav="survey">进入问卷</a>
+            <div class="panel-links">
+              <a href="#dashboard" data-nav="dashboard">查看状态</a>
+              <a href="#results" data-nav="results">查看结果</a>
+              <button type="button" data-logout>退出登录</button>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="dashboard" class="view app-view">
+        <aside class="round-list" aria-label="轮次列表">
+          <div class="round-card is-current">
+            <strong data-round-id>本轮</strong>
+            <span>正在收集画像</span>
+            <em data-participants>0 人参与</em>
+          </div>
+          <div class="round-card">
+            <strong>匹配节奏</strong>
+            <span data-match-frequency>原则上每 3 天一次</span>
+            <em>随画像分布浮动</em>
+          </div>
+          <div class="round-card">
+            <strong>边界提示</strong>
+            <span>TA 的画像过宽或过窄都会影响匹配</span>
+            <em>建议定期更新</em>
+          </div>
+        </aside>
+
+        <div class="dashboard-grid">
+          <section class="panel status-panel">
+            <p class="eyebrow">MoonShade · 本轮</p>
+            <h2 data-dashboard-title>问卷收集中</h2>
+            <div class="status-strip">
+              <span data-close-time>下次匹配参考时间加载中</span>
+              <span data-result-time>发布状态加载中</span>
+            </div>
+            <p class="status-note" data-match-note>原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
+          </section>
+
+          <section class="panel half rhythm-panel">
+            <h3>本轮节奏</h3>
+            <p>系统会先看双方边界是否互相允许，再计算关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度。</p>
+            <button class="secondary-action" data-nav="survey">填写 / 更新问卷</button>
+          </section>
+
+          <section class="panel half balance-panel">
+            <h3>影响匹配的因素</h3>
+            <p data-balance-note>同类画像越多，越容易稳定匹配；性别比例失衡、偏好过宽或过窄时，匹配频率和结果都会出现变化。</p>
+            <button class="secondary-action" data-nav="results">查看匹配结果</button>
+          </section>
+
+          <section class="panel wide">
+            <h3>公告</h3>
+            <div data-announcements class="announcement-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="survey" class="view app-view survey-shell" tabindex="-1">
+        <aside class="survey-sidebar">
+          <strong data-survey-progress>1 / 4 第一卷</strong>
+          <div class="survey-steps" data-survey-steps></div>
+          <p data-submit-state>尚未提交</p>
+        </aside>
+
+        <form class="survey-form mirror-form" data-survey-form>
+          <header class="form-title">
+            <p class="eyebrow">MoonShade Questionnaire</p>
+            <h2 data-page-title>第一卷：基本信息</h2>
+            <p data-page-desc hidden></p>
+          </header>
+
+          <section class="mirror-frame">
+            <div class="mirror-heading moon-heading">
+              <span>Moon</span>
+              <h3>己</h3>
+              <p>南风知我意</p>
+            </div>
+            <div class="mirror-heading shade-heading">
+              <span>Shade</span>
+              <h3>彼</h3>
+              <p>吹梦到西洲</p>
+            </div>
+            <div class="mirror-rows" data-paired-fields></div>
+          </section>
+
+          <section class="contact-page" data-contact-page hidden>
+            <div class="question-row compact-row">
+              <label for="contactType">联系方式类型</label>
+              <select id="contactType" name="contactType">
+                <option>微信</option>
+              </select>
+            </div>
+            <div class="question-row compact-row">
+              <label for="contactValue">微信号</label>
+              <input id="contactValue" name="contactValue" placeholder="仅向高分匹配对象展示" />
+            </div>
+            <div class="question-row compact-row">
+              <label for="selfIntro">一句自我介绍</label>
+              <textarea id="selfIntro" name="selfIntro" rows="4" placeholder="写一点想让对方先知道的事。"></textarea>
+            </div>
+            <label class="consent">
+              <input type="checkbox" name="consent" />
+              <span>我确认以上信息用于 MoonShade 本轮匹配，并理解联系方式会展示给高分匹配对象。</span>
+            </label>
+          </section>
+
+          <div class="page-actions">
+            <button class="secondary-action" type="button" data-prev-page>上一页</button>
+            <button class="secondary-action" type="button" data-next-page>下一页</button>
+            <button class="primary-action" type="submit" data-submit-button>提交问卷</button>
+          </div>
+          <p class="form-message" data-form-message></p>
+        </form>
+      </section>
+
+      <section id="results" class="view app-view results-view">
+        <section class="panel result-intro status-panel">
+          <p class="eyebrow">本轮结果</p>
+          <h2>匹配结果</h2>
+          <p>管理员发布后，你会在这里看到本轮匹配。系统先严格检查双方性别边界，再按关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度排序。</p>
+          <button class="secondary-action" data-refresh-results>刷新结果</button>
+        </section>
+        <div class="match-list" data-match-list></div>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const logout = () => {
+          localStorage.removeItem("moonshade.authToken");
+          localStorage.removeItem("moonshade.token");
+          localStorage.removeItem("moonshade.adminToken");
+          location.replace("/");
+        };
+        document.addEventListener("click", event => {
+          if (event.target.closest("[data-force-logout], [data-logout]")) logout();
+        });
+        const authed = localStorage.getItem("moonshade.authToken") || localStorage.getItem("moonshade.token") || localStorage.getItem("moonshade.adminToken");
+        document.querySelectorAll("[data-force-logout]").forEach(button => { button.hidden = !authed; });
+      })();
+    </script>
+    <script src="/app.js?v=20260715-home-card-links" defer></script>
+  </body>
+</html>
