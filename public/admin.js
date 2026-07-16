@@ -59,6 +59,25 @@ function statusLabel(status) {
   return ({ draft: "待审核", published: "已发布", held: "暂缓" })[status] || status;
 }
 
+function formatDateTime(value) {
+  if (!value) return "暂无";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function scheduleText(frequency) {
+  if (!frequency) return "暂无";
+  const days = Number(frequency.referenceDays);
+  const phrase = Number.isFinite(days) && days <= 0
+    ? "当前可分配"
+    : `约 ${Number.isFinite(days) ? days : frequency.intervalDays || 3} 天后`;
+  return `${phrase} · ${formatDateTime(frequency.expectedNextAllocationAt)}`;
+}
+
 function frequencyText(frequency) {
   if (!frequency) return "标准频率";
   const gap = frequency.daysSinceLastMatch === null || frequency.daysSinceLastMatch === undefined
@@ -238,7 +257,7 @@ function renderSettings() {
 function renderProfiles() {
   const table = $("[data-profile-table]");
   table.innerHTML = `
-    <thead><tr><th>查看</th><th>邮箱</th><th>展示名</th><th>性别</th><th>频率</th><th>身份</th><th>校区</th><th>方向</th><th>期待</th><th>更新时间</th></tr></thead>
+    <thead><tr><th>查看</th><th>邮箱</th><th>展示名</th><th>性别</th><th>频率</th><th>上次成功</th><th>预计下次</th><th>身份</th><th>校区</th><th>方向</th><th>期待</th><th>更新时间</th></tr></thead>
     <tbody>
       ${state.profiles.map(profile => `
         <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}">
@@ -247,6 +266,8 @@ function renderProfiles() {
           <td>${escapeHtml(profile.displayName)}</td>
           <td>${escapeHtml(profile.gender)}</td>
           <td><span class="frequency-badge">${escapeHtml(frequencyText(profile.matchFrequency))}</span></td>
+          <td>${escapeHtml(formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt))}</td>
+          <td>${escapeHtml(scheduleText(profile.matchFrequency))}</td>
           <td>${escapeHtml(profile.identity)}</td>
           <td>${escapeHtml(formatValue(profile.location))}</td>
           <td>${escapeHtml(profile.discipline)}</td>
@@ -325,6 +346,8 @@ function renderProfileDetail() {
       ["频率标签", profile.matchFrequency?.label],
       ["建议间隔", profile.matchFrequency?.intervalDays ? `${profile.matchFrequency.intervalDays} 天` : ""],
       ["距上次成功匹配", profile.matchFrequency?.daysSinceLastMatch === null || profile.matchFrequency?.daysSinceLastMatch === undefined ? "暂无成功匹配" : `${profile.matchFrequency.daysSinceLastMatch} 天`],
+      ["上次成功匹配时间", formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt)],
+      ["预计下次分配时间", scheduleText(profile.matchFrequency)],
       ["判断依据", profile.matchFrequency?.reason]
     ])}
   `;

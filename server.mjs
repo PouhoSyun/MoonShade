@@ -38,8 +38,8 @@ loadEnvFile(join(__dirname, ".env"));
 const PUBLIC_DIR = join(__dirname, "public");
 const DATA_FILE = process.env.MOONSHADE_DATA_FILE || join(__dirname, "data", "moonshade.json");
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_EMAIL = "moodylitchee@stu.pku.edu.cn";
-const ADMIN_PASSWORD = "moodylitchee";
+const ADMIN_EMAIL = process.env.MOONSHADE_ADMIN_EMAIL || "moodylitchee@stu.pku.edu.cn";
+const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -596,6 +596,11 @@ function publicProfile(profile, context = {}) {
       label: frequency.label,
       intervalDays: frequency.intervalDays,
       daysSinceLastMatch: frequency.daysSinceLastMatch,
+      lastSuccessfulMatchAt: frequency.lastSuccessfulMatchAt,
+      expectedNextAllocationAt: frequency.expectedNextAllocationAt,
+      nextEligibleAt: frequency.nextEligibleAt,
+      referenceDays: frequency.referenceDays,
+      eligible: frequency.eligible,
       reason: frequency.reason
     } : undefined,
     updatedAt: profile.updatedAt
@@ -717,7 +722,30 @@ function listLength(value) {
   return Array.isArray(value) ? value.length : (value ? 1 : 0);
 }
 
-function profileFrequency(profile, profiles, history, settings = defaultData.settings) {
+function containsValue(value, expected) {
+  return Array.isArray(value) ? value.includes(expected) : value === expected;
+}
+
+function rareTraitCount(profile, pool) {
+  const traits = [
+    ["identity", profile.identity],
+    ["discipline", profile.discipline],
+    ["intent", profile.intent],
+    ["tempo", profile.tempo],
+    ["intimacy", profile.intimacy],
+    ["intimacyTiming", profile.intimacyTiming],
+    ...(Array.isArray(profile.selfValues) ? profile.selfValues.map(value => ["selfValues", value]) : []),
+    ...(Array.isArray(profile.selfStyle) ? profile.selfStyle.map(value => ["selfStyle", value]) : [])
+  ].filter(([, value]) => value);
+  const unique = new Map(traits.map(([field, value]) => [`${field}:${value}`, [field, value]]));
+  const rareLimit = Math.max(2, Math.ceil(pool.length * 0.28));
+  return [...unique.values()].filter(([field, value]) => {
+    const count = pool.filter(item => containsValue(item[field], value)).length;
+    return count > 0 && count <= rareLimit && count < pool.length;
+  }).length;
+}
+
+function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now()) {
   const pool = profiles.filter(item => item.consent);
   const genderTotal = pool.filter(item => item.gender === profile.gender).length || 1;
   const genderShare = pool.length ? genderTotal / pool.length : 1;
@@ -740,17 +768,20 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
   const tooBroad = idealLengths.filter(length => length >= 5).length + (profile.seeking?.includes("不限") ? 2 : 0);
   const tooNarrow = idealLengths.filter(length => length === 1).length;
   const rareGender = genderShare <= 0.38;
+  const rareTraits = rareTraitCount(profile, pool);
+  const rarePersonality = rareTraits >= 2;
   const interval = cleanSettings(settings).matchIntervalDays;
   const lastAt = history.lastMatchedAt.get(profile.id) || 0;
-  const daysSince = lastAt ? Math.floor((Date.now() - lastAt) / 86_400_000) : null;
+  const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
   let label = "标准频率";
   let intervalDays = interval;
   const reasons = [];
   if (rareGender) reasons.push("性别画像相对稀缺");
+  if (rarePersonality) reasons.push("相处节奏或性格画像相对稀缺");
   if (precise >= 8) reasons.push("TA 画像较精准");
   if (tooBroad >= 5) reasons.push("TA 画像偏宽");
   if (tooNarrow >= 9) reasons.push("TA 画像偏窄");
-  if (rareGender || precise >= 8) {
+  if (rareGender || rarePersonality || precise >= 8) {
     label = "高频";
     intervalDays = Math.max(1, Math.floor(interval / 2));
   }
@@ -758,23 +789,33 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
     label = "低频观察";
     intervalDays = interval * 2;
   }
-  const overdue = daysSince === null || daysSince >= intervalDays;
-  const waitBoost = daysSince === null ? 14 : Math.min(24, Math.floor(daysSince / Math.max(1, intervalDays)) * 6);
+  const nextEligibleAtMs = lastAt ? lastAt + intervalDays * 86_400_000 : now;
+  const referenceDays = Math.max(0, Math.ceil((nextEligibleAtMs - now) / 86_400_000));
+  const overdue = nextEligibleAtMs <= now;
+  const waitBoost = daysSince === null
+    ? 18
+    : Math.min(36, (daysSince >= intervalDays ? 10 : 0) + Math.floor(Math.max(0, daysSince - intervalDays) / Math.max(1, intervalDays)) * 8);
+  const notYetPenalty = overdue ? 0 : 12 + referenceDays * 3;
   if (daysSince === null) reasons.push("尚无成功匹配记录");
   else if (daysSince >= intervalDays) reasons.push(`距上次成功匹配 ${daysSince} 天`);
   return {
     label,
     intervalDays,
     daysSinceLastMatch: daysSince,
+    lastSuccessfulMatchAt: lastAt ? new Date(lastAt).toISOString() : null,
+    expectedNextAllocationAt: new Date(nextEligibleAtMs).toISOString(),
+    nextEligibleAt: new Date(nextEligibleAtMs).toISOString(),
+    referenceDays,
     eligible: overdue,
-    priority: (rareGender ? 10 : 0) + Math.min(12, precise) - tooBroad * 2 - Math.max(0, tooNarrow - 8) + waitBoost,
+    priority: (rareGender ? 10 : 0) + (rarePersonality ? 8 : 0) + Math.min(12, precise) - tooBroad * 2 - Math.max(0, tooNarrow - 8) + waitBoost - notYetPenalty,
     reason: reasons.join("；") || "画像分布适中"
   };
 }
 
 function frequencyMapFor(profiles, matches, settings) {
   const history = matchHistory(matches);
-  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings)]));
+  const now = Date.now();
+  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now)]));
 }
 
 function mbtiMetricScore(a, b) {
@@ -903,8 +944,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const pool = profiles.filter(profile => profile.consent);
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
-  const eligible = pool.filter(profile => frequencies.get(profile.id)?.eligible);
-  const activePool = eligible.length >= 2 ? eligible : pool;
+  const activePool = pool;
   const used = new Set();
   const candidates = [];
   const pairs = [];
@@ -918,7 +958,8 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       const lastRepeat = history.lastPartners.get(activePool[i].id) === activePool[j].id || history.lastPartners.get(activePool[j].id) === activePool[i].id;
       const leftFrequency = frequencies.get(activePool[i].id) || { priority: 0 };
       const rightFrequency = frequencies.get(activePool[j].id) || { priority: 0 };
-      const adjustedScore = scored.score + leftFrequency.priority + rightFrequency.priority - repeatedCount * 22 - (lastRepeat ? 34 : 0);
+      const schedulePenalty = (leftFrequency.eligible ? 0 : 18) + (rightFrequency.eligible ? 0 : 18);
+      const adjustedScore = scored.score + leftFrequency.priority + rightFrequency.priority - schedulePenalty - repeatedCount * 22 - (lastRepeat ? 34 : 0);
       candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, repeatedCount, lastRepeat, ...scored });
     }
   }
@@ -941,8 +982,9 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
         ...best.reasons,
         best.lastRepeat ? "已避让上次搭档后仍为当前最优" : "已参考历史搭档避重",
         `${best.left.displayName}：${leftFrequency?.label || "标准频率"}`,
-        `${best.right.displayName}：${rightFrequency?.label || "标准频率"}`
-      ].slice(0, 6),
+        `${best.right.displayName}：${rightFrequency?.label || "标准频率"}`,
+        leftFrequency?.eligible && rightFrequency?.eligible ? "双方均已到参考分配时间" : "已参考个人分配时间作降权"
+      ].slice(0, 8),
       status: "draft",
       notes: "",
       frequency: {
@@ -1084,9 +1126,9 @@ function adminProfile(profile, context = {}) {
   };
 }
 
-function serializeAdminMatches(matches, profiles, settings = defaultData.settings) {
+function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
-  const frequencies = frequencyMapFor(profiles, matches, settings);
+  const frequencies = frequencyMapFor(profiles, historyMatches, settings);
   return [...matches].sort((a, b) => matchTime(b) - matchTime(a)).map(match => ({
     ...match,
     left: byId.get(match.leftId) ? publicProfile(byId.get(match.leftId), { frequencyMap: frequencies }) : null,
@@ -1244,7 +1286,7 @@ async function handleApi(req, res, url) {
       const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
       data.matches = data.matches.filter(match => !(match.roundId === roundId && match.status === "draft")).concat(generated);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { matches: serializeAdminMatches(generated, data.profiles, data.settings) });
+      return sendJson(res, 200, { matches: serializeAdminMatches(generated, data.profiles, data.settings, data.matches) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/publish") {
       const roundId = currentRound(new Date(), data.settings).id;
@@ -1287,7 +1329,7 @@ async function handleApi(req, res, url) {
       }
       match.updatedAt = new Date().toISOString();
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings)[0] });
+      return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings, data.matches)[0] });
     }
   }
 
@@ -1312,7 +1354,13 @@ async function handleApi(req, res, url) {
     const profile = authUser
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
-    return sendJson(res, 200, { profile: profile || null });
+    const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+    return sendJson(res, 200, {
+      profile: profile ? {
+        ...profile,
+        matchFrequency: frequencyMap.get(profile.id) || null
+      } : null
+    });
   }
 
   if (req.method === "POST" && url.pathname === "/api/profile") {
@@ -1341,8 +1389,9 @@ async function handleApi(req, res, url) {
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
     if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
+    const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
     const matches = publishedMatchesFor(profile, data.profiles.filter(item => item.consent), data.matches);
-    return sendJson(res, 200, { profile: publicProfile(profile), matches });
+    return sendJson(res, 200, { profile: publicProfile(profile, { frequencyMap }), matches });
   }
 
   return sendJson(res, 404, { error: "接口不存在" });

@@ -175,18 +175,47 @@ function hasAuthToken() {
   return Boolean(state.authToken);
 }
 
-function updateCountdown() {
-  const target = state.round?.closesAt ? new Date(state.round.closesAt).getTime() : 0;
+function schedulePhrase(frequency) {
+  if (!frequency) return "提交问卷后生成";
+  const days = Number(frequency.referenceDays);
+  if (Number.isFinite(days) && days <= 0) return "当前可参与下一轮分配";
+  if (Number.isFinite(days)) return `约 ${days} 天后`;
+  return `约 ${frequency.intervalDays || state.round?.intervalDays || 3} 天`;
+}
+
+function renderPersonalSchedule() {
   const el = $("[data-countdown]");
-  if (!target || !el) return;
-  const diff = Math.max(0, target - Date.now());
-  const values = [
-    [Math.floor(diff / 86_400_000), "天"],
-    [Math.floor(diff / 3_600_000) % 24, "时"],
-    [Math.floor(diff / 60_000) % 60, "分"],
-    [Math.floor(diff / 1_000) % 60, "秒"]
-  ];
-  el.innerHTML = values.map(([number, unit]) => `<span><strong>${String(number).padStart(2, "0")}</strong><small>${unit}</small></span>`).join("");
+  const frequency = state.profile?.matchFrequency;
+  const interval = frequency?.intervalDays || state.round?.intervalDays || state.round?.settings?.matchIntervalDays || 3;
+  if (el) {
+    if (frequency) {
+      const days = Number(frequency.referenceDays);
+      el.innerHTML = Number.isFinite(days) && days <= 0
+        ? `<span><strong>可参与</strong><small>下一轮</small></span>`
+        : `<span><strong>${Number.isFinite(days) ? days : interval}</strong><small>天左右</small></span>`;
+    } else if (hasAuthToken()) {
+      el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
+    } else {
+      el.innerHTML = `<span><strong>${interval}</strong><small>天参考</small></span>`;
+    }
+  }
+  const note = $("[data-round-note]");
+  if (note) {
+    note.textContent = frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动";
+  }
+  const closeTime = $("[data-close-time]");
+  if (closeTime) {
+    const expected = frequency?.expectedNextAllocationAt ? `（${formatDateTime(frequency.expectedNextAllocationAt)}）` : "";
+    closeTime.textContent = frequency
+      ? `个人下次分配参考：${schedulePhrase(frequency)}${expected}`
+      : "个人下次分配参考：提交问卷后生成";
+  }
+  const matchFrequency = $("[data-match-frequency]");
+  if (matchFrequency) {
+    matchFrequency.textContent = frequency
+      ? `${frequency.label} · 参考间隔 ${frequency.intervalDays} 天`
+      : `基础参考间隔 ${interval} 天`;
+  }
 }
 
 function normalizeRoute(route) {
@@ -244,7 +273,7 @@ function renderRound(payload) {
   $("[data-announcements]").innerHTML = payload.announcements.map(item => `
     <article class="announcement"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.body)}</span></article>
   `).join("");
-  updateCountdown();
+  renderPersonalSchedule();
 }
 
 function optionButton(value, selected, fieldName, multi = false, label = value) {
@@ -441,8 +470,9 @@ function renderAuthState() {
   $$("[data-force-logout]").forEach(button => { button.hidden = !authed; });
   const homeEmail = $("[data-home-email]");
   if (homeEmail) homeEmail.textContent = state.email
-    ? `${state.email} 已验证，可以继续填写或更新问卷。`
+    ? `${state.email} 已验证，${schedulePhrase(state.profile?.matchFrequency)}。`
     : "已登录，可以继续填写或更新问卷。";
+  renderPersonalSchedule();
 }
 
 function bindControls() {
@@ -630,6 +660,7 @@ function bindForm() {
       fillForm(payload.profile);
       message.textContent = "已提交。你可以继续修改，也可以去结果页查看当前匹配。";
       await loadRound();
+      await loadMe();
     } catch (error) {
       message.textContent = error.message;
     }
@@ -836,7 +867,12 @@ async function loadMe() {
   const query = state.authToken ? `authToken=${encodeURIComponent(state.authToken)}` : `token=${encodeURIComponent(state.token)}`;
   if (!state.authToken && !state.token) return;
   const payload = await api(`/api/me?${query}`);
-  if (payload.profile) fillForm(payload.profile);
+  if (payload.profile) {
+    fillForm(payload.profile);
+  } else {
+    state.profile = null;
+    renderPersonalSchedule();
+  }
 }
 
 async function loadMatches() {
@@ -893,10 +929,9 @@ async function init() {
   navigate(routeFromHash());
   renderAuthState();
   setInterval(renderAuthState, 500);
-  setInterval(updateCountdown, 1000);
 }
 
 init().catch(error => {
   console.error(error);
-  $("[data-countdown]").textContent = "加载失败，请稍后刷新";
+  $("[data-countdown]").textContent = "加载失败";
 });
