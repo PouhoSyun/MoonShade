@@ -1,6 +1,6 @@
 const tokenKey = "moonshade.token";
 const authKey = "moonshade.authToken";
-window.__MOONSHADE_APP_VERSION__ = "20260715-home-card-links";
+window.__MOONSHADE_APP_VERSION__ = "20260716-hero-logo";
 
 const optionSets = {
   genders: ["女", "男", "非二元", "暂不透露"],

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MoonShade 管理后台</title>
+    <link rel="stylesheet" href="/styles.css?v=20260715-home-card-links" />
+  </head>
+  <body>
+    <main class="admin-page">
+      <section class="panel admin-login" data-admin-login>
+        <p class="eyebrow">MoonShade Admin</p>
+        <h1>管理后台</h1>
+        <p class="form-message" data-admin-message>输入管理员邮箱，完成滑动验证后自动检查账号。</p>
+        <div class="auth-controls admin-auth-controls">
+          <input data-admin-email value="moodylitchee@stu.pku.edu.cn" autocomplete="username" />
+          <div class="slide-verify" data-admin-slide-verify>
+            <div class="slide-track">
+              <span data-admin-slide-fill></span>
+              <button type="button" class="slide-handle" data-admin-slide-handle aria-label="拖动完成安全验证">»</button>
+              <em data-admin-slide-label>按住滑块，拖到最右边</em>
+            </div>
+          </div>
+          <div class="auth-mode" data-admin-password-mode hidden>
+            <input data-admin-password type="password" placeholder="密码" autocomplete="current-password" />
+            <button class="primary-action" type="button" data-admin-login-button>登录</button>
+          </div>
+          <div class="local-log" data-admin-local-log hidden></div>
+        </div>
+      </section>
+
+      <section class="admin-console" data-admin-console hidden>
+        <header class="admin-header">
+          <div>
+            <p class="eyebrow">MoonShade Admin</p>
+            <h1>运营后台</h1>
+          </div>
+          <div class="admin-actions">
+            <button class="secondary-action" data-refresh-admin>刷新</button>
+            <button class="secondary-action" data-seed-demo-users>生成测试用户</button>
+            <button class="secondary-action" type="button" data-admin-logout>退出登录</button>
+            <button class="primary-action" data-generate-matches>生成本轮匹配</button>
+            <button class="primary-action publish-action" data-publish-matches>发布已审核匹配</button>
+          </div>
+        </header>
+
+        <section class="admin-overview">
+          <section class="panel admin-settings-panel">
+            <p class="eyebrow">Match Settings</p>
+            <h2>匹配轮次</h2>
+            <label>匹配间隔
+              <select data-match-interval>
+                <option value="1">每 1 天</option>
+                <option value="2">每 2 天</option>
+                <option value="3">每 3 天</option>
+                <option value="5">每 5 天</option>
+                <option value="7">每 7 天</option>
+                <option value="14">每 14 天</option>
+              </select>
+            </label>
+            <label>状态页说明
+              <textarea data-match-note-input rows="3"></textarea>
+            </label>
+            <button class="secondary-action" data-save-settings>保存设置</button>
+            <p class="form-message" data-settings-message></p>
+          </section>
+
+          <section class="panel admin-stat-panel">
+            <p class="eyebrow">Current Round</p>
+            <h2 data-admin-round-title>本轮</h2>
+            <div class="admin-metrics">
+              <span><strong data-admin-profile-count>0</strong><small>份问卷</small></span>
+              <span><strong data-admin-match-count>0</strong><small>组匹配</small></span>
+              <span><strong data-admin-interval>3</strong><small>天/轮</small></span>
+            </div>
+            <p data-admin-round-note>加载中</p>
+          </section>
+        </section>
+
+        <section class="admin-data-grid">
+          <section class="panel">
+            <h2>已提交问卷</h2>
+            <div class="admin-table-wrap">
+              <table class="admin-table" data-profile-table></table>
+            </div>
+          </section>
+
+          <section class="panel profile-detail-panel">
+            <h2>问卷详情</h2>
+            <div data-profile-detail class="profile-detail"></div>
+          </section>
+        </section>
+
+        <section class="panel">
+          <h2>匹配结果调整</h2>
+          <div class="match-editor" data-match-editor></div>
+        </section>
+      </section>
+    </main>
+    <script>
+      (() => {
+        document.addEventListener("click", event => {
+          if (!event.target.closest("[data-admin-logout], [data-force-logout]")) return;
+          localStorage.removeItem("moonshade.adminToken");
+          localStorage.removeItem("moonshade.authToken");
+          localStorage.removeItem("moonshade.token");
+          location.replace("/admin.html");
+        });
+      })();
+    </script>
+    <script src="/admin.js?v=20260715-home-card-links" defer></script>
+  </body>
+</html>

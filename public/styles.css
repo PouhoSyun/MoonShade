@@ -685,6 +685,17 @@ textarea:focus {
   color: #151d31 !important;
 }
 
+.login-hero-art .hero-logo {
+  width: min(760px, 82vw);
+}
+
+@media (max-width: 980px) {
+  .login-hero-art .hero-logo {
+    width: min(640px, 92vw);
+    max-height: 36vh;
+  }
+}
+
 .home-login-panel .auth-panel,
 .home-login-panel .entry-panel {
   backdrop-filter: blur(12px);
@@ -1866,6 +1877,23 @@ textarea:focus {
 .login-hero-art .hero-copy p:last-child {
   margin-left: 0;
   margin-right: 0;
+}
+
+.hero-logo {
+  display: block;
+  width: min(760px, 82vw);
+  max-height: 42vh;
+  object-fit: contain;
+  object-position: left center;
+  margin: 12px 0 18px;
+  filter:
+    invert(94%)
+    sepia(22%)
+    saturate(498%)
+    hue-rotate(348deg)
+    brightness(106%)
+    contrast(97%)
+    drop-shadow(0 5px 26px rgba(0, 0, 0, 0.52));
 }
 
 .hero-countdown {
