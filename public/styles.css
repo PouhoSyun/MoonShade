@@ -2836,8 +2836,8 @@ main,
 
 .hero-kicker {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  align-items: baseline;
+  gap: 14px;
   margin-bottom: 12px;
 }
 
@@ -2853,15 +2853,15 @@ main,
 
 .hero-xhs-note {
   margin: 0;
-  padding: 6px 10px;
+  padding: 4px 9px 5px;
   border: 1px solid rgba(231, 199, 98, 0.28);
   border-radius: 999px;
   color: rgba(247, 241, 215, 0.84);
   background: rgba(8, 16, 39, 0.42);
   backdrop-filter: blur(10px);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1;
   letter-spacing: 0.02em;
   text-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 }
@@ -2873,7 +2873,7 @@ main,
   }
 
   .hero-xhs-note {
-    font-size: 12px;
+    font-size: 10px;
   }
 }
 
@@ -2882,4 +2882,18 @@ main,
 .survey-shell .form-message,
 .survey-shell [data-form-message] {
   color: #d6b150;
+}
+
+.form-title [data-page-desc] {
+  max-width: 980px;
+  margin: 18px 0 0;
+  color: rgba(255, 248, 220, 0.82);
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.form-title [data-page-desc].is-interest-note {
+  padding: 12px 14px;
+  border-left: 3px solid #d6b150;
+  background: rgba(8, 16, 39, 0.26);
 }

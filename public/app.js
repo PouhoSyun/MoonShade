@@ -495,7 +495,10 @@ function renderSurveyPage() {
   $(".form-title").hidden = !authed;
   $(".mirror-frame").classList.toggle("is-single", Boolean(page.singleFields));
   $("[data-page-title]").textContent = page.title;
-  $("[data-page-desc]").textContent = page.desc;
+  const pageDesc = $("[data-page-desc]");
+  pageDesc.textContent = page.desc || "";
+  pageDesc.hidden = !authed || !page.desc;
+  pageDesc.classList.toggle("is-interest-note", page.short === "兴趣爱好");
   $("[data-survey-progress]").textContent = `${state.pageIndex + 1} / ${pages.length} ${page.short}`;
   $("[data-paired-fields]").innerHTML = page.singleFields
     ? `<div class="single-fields">${page.singleFields.map(field => `<div class="mirror-cell moon-cell single-field-row">${renderField(field)}</div>`).join("")}</div>`
