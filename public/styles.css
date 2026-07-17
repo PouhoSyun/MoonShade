@@ -668,6 +668,101 @@ textarea:focus {
   background: transparent;
 }
 
+/* MoonShade version badge and final home auth palette */
+.brand {
+  align-items: center;
+}
+
+.brand .app-version {
+  margin-top: 5px;
+  color: rgba(255, 248, 220, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.topbar {
+  background: rgba(5, 11, 27, 0.72);
+  border-bottom-color: rgba(255, 248, 220, 0.12);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
+}
+
+.brand,
+.nav-button {
+  color: rgba(255, 250, 232, 0.86);
+}
+
+.brand small {
+  color: rgba(255, 248, 220, 0.66);
+}
+
+.brand-dot {
+  background: #e7c762;
+  box-shadow: 0 0 18px rgba(231, 199, 98, 0.32);
+}
+
+.home-login-panel .entry-panel.home-entry,
+.home-login-panel .auth-panel {
+  color: #f7f1d7;
+  background:
+    linear-gradient(135deg, rgba(8, 16, 39, 0.88), rgba(14, 31, 58, 0.78)),
+    radial-gradient(circle at 12% 0, rgba(231, 199, 98, 0.2), transparent 34%);
+  border: 1px solid rgba(231, 199, 98, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.16),
+    0 34px 100px rgba(0, 0, 0, 0.34);
+}
+
+.home-login-panel .entry-panel.home-entry .eyebrow,
+.home-login-panel .auth-panel .eyebrow,
+.home-login-panel .auth-panel strong {
+  color: #e7c762;
+}
+
+.home-login-panel .entry-panel.home-entry h2 {
+  color: #fff8dc;
+  font-size: clamp(54px, 7vw, 92px);
+  line-height: 1.02;
+  text-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
+}
+
+.home-login-panel .entry-panel.home-entry p,
+.home-login-panel .auth-panel p,
+.home-login-panel .entry-panel.home-entry [data-home-email] {
+  color: rgba(247, 241, 215, 0.82);
+}
+
+.home-login-panel .entry-panel.home-entry .primary-action,
+.home-login-panel .auth-panel .secondary-action,
+.home-login-panel .auth-panel .primary-action {
+  color: #081027;
+  background: linear-gradient(135deg, #f4d878, #d6b150);
+  border-color: rgba(255, 248, 220, 0.34);
+}
+
+.home-login-panel .entry-panel.home-entry .primary-action:hover,
+.home-login-panel .auth-panel .secondary-action:hover,
+.home-login-panel .auth-panel .primary-action:hover {
+  background: linear-gradient(135deg, #ffeaa4, #e1bf5c);
+}
+
+.home-login-panel .entry-panel.home-entry .panel-links a,
+.home-login-panel .entry-panel.home-entry .panel-links button {
+  color: rgba(247, 241, 215, 0.78) !important;
+}
+
+.home-login-panel .entry-panel.home-entry .panel-links a:hover,
+.home-login-panel .entry-panel.home-entry .panel-links button:hover {
+  color: #fff8dc !important;
+}
+
+.home-login-panel .auth-panel input,
+.home-login-panel .entry-panel.home-entry input {
+  color: #fff8dc;
+  background: rgba(255, 248, 220, 0.08);
+  border-color: rgba(255, 248, 220, 0.22);
+}
+
 /* Final readability fix for links inside the light home card */
 .home-login-panel .entry-panel .panel-links a,
 .home-login-panel .entry-panel .panel-links button,
@@ -2475,4 +2570,46 @@ main,
 
 .home-login-panel {
   background: transparent;
+}
+/* EOF final MoonShade home login palette */
+.home-login-panel .entry-panel.home-entry,
+.home-login-panel .auth-panel {
+  color: #f7f1d7;
+  background:
+    radial-gradient(circle at 12% 0, rgba(231, 199, 98, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(8, 16, 39, 0.9), rgba(14, 31, 58, 0.8));
+  border: 1px solid rgba(231, 199, 98, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.16),
+    0 34px 100px rgba(0, 0, 0, 0.34);
+}
+
+.home-login-panel .entry-panel.home-entry h2 {
+  color: #fff8dc;
+  font-size: clamp(42px, 5vw, 68px);
+  line-height: 1.04;
+  text-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
+}
+
+.home-login-panel .entry-panel.home-entry .eyebrow,
+.home-login-panel .auth-panel strong {
+  color: #e7c762;
+}
+
+.home-login-panel .entry-panel.home-entry p,
+.home-login-panel .auth-panel p,
+.home-login-panel .entry-panel.home-entry [data-home-email] {
+  color: rgba(247, 241, 215, 0.82);
+}
+
+.home-login-panel .entry-panel.home-entry .primary-action,
+.home-login-panel .auth-panel .secondary-action {
+  color: #081027;
+  background: linear-gradient(135deg, #f4d878, #d6b150);
+  border-color: rgba(255, 248, 220, 0.34);
+}
+
+.home-login-panel .entry-panel.home-entry .panel-links a,
+.home-login-panel .entry-panel.home-entry .panel-links button {
+  color: rgba(247, 241, 215, 0.78) !important;
 }

@@ -381,6 +381,115 @@ function profileOptions(selectedId) {
   return state.profiles.map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`).join("");
 }
 
+function asList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
+function yearInRange(year, min, max) {
+  if (!year) return false;
+  const lower = Number.isInteger(min) ? min : 1900;
+  const upper = Number.isInteger(max) ? max : 2100;
+  return year >= Math.min(lower, upper) && year <= Math.max(lower, upper);
+}
+
+function integerOrNull(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && String(value ?? "") !== "" ? number : null;
+}
+
+function profileYear(profile) {
+  return Number(profile.birthYear) || (profile.age ? new Date().getFullYear() - Number(profile.age) : null);
+}
+
+function locationAccepted(actualLocation, idealLocations) {
+  const actual = asList(actualLocation);
+  const ideal = asList(idealLocations);
+  if (!actual.length || !ideal.length) return true;
+  return actual.some(item => ideal.includes(item));
+}
+
+function hardCompatible(left, right) {
+  if (!left || !right || left.id === right.id) return false;
+  const leftSeeking = asList(left.seeking);
+  const rightSeeking = asList(right.seeking);
+  const genderOk = (leftSeeking.includes("不限") || leftSeeking.includes(right.gender))
+    && (rightSeeking.includes("不限") || rightSeeking.includes(left.gender));
+  const leftYear = profileYear(left);
+  const rightYear = profileYear(right);
+  const leftMin = integerOrNull(left.idealBirthYearMin);
+  const leftMax = integerOrNull(left.idealBirthYearMax);
+  const rightMin = integerOrNull(right.idealBirthYearMin);
+  const rightMax = integerOrNull(right.idealBirthYearMax);
+  const leftHasRange = Number.isInteger(leftMin) || Number.isInteger(leftMax);
+  const rightHasRange = Number.isInteger(rightMin) || Number.isInteger(rightMax);
+  const ageOk = (!leftHasRange || !rightYear || yearInRange(rightYear, leftMin, leftMax))
+    && (!rightHasRange || !leftYear || yearInRange(leftYear, rightMin, rightMax));
+  const locationOk = locationAccepted(right.location || right.city, left.idealLocations)
+    && locationAccepted(left.location || left.city, right.idealLocations);
+  return genderOk && ageOk && locationOk;
+}
+
+function compatibleProfileOptions(selectedId, counterpartId) {
+  const counterpart = state.profiles.find(profile => profile.id === counterpartId);
+  return state.profiles
+    .filter(profile => !counterpart || hardCompatible(profile, counterpart))
+    .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
+    .join("");
+}
+
+function renderMatchDiagnostics(match) {
+  return `
+    <div data-match-diagnostics>
+      <p>${(match.reasons || []).map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
+      ${renderBoundaryWarnings(match.boundaryWarnings)}
+      <div class="match-frequency-notes">
+        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(weightText(match.left.matchFrequency))}</span>` : ""}
+        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(weightText(match.right.matchFrequency))}</span>` : ""}
+        <span>交叉相似权重：${escapeHtml(match.crossWeight ?? match.score)}</span>
+        ${match.rawScore !== undefined ? `<span>原始相似分：${escapeHtml(match.rawScore)} / ${escapeHtml(match.maxScore || 240)}</span>` : ""}
+        ${match.weightBreakdown ? `<span>重复降权：${escapeHtml(match.weightBreakdown.repeatPenalty || 0)}</span>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function updateSelectOptions(select, selectedId, counterpartId) {
+  select.innerHTML = compatibleProfileOptions(selectedId, counterpartId);
+  if (Array.from(select.options).some(option => option.value === selectedId)) {
+    select.value = selectedId;
+  } else if (select.options.length) {
+    select.value = select.options[0].value;
+  }
+}
+
+async function previewMatch(card) {
+  const leftSelect = card.querySelector("[data-left-id]");
+  const rightSelect = card.querySelector("[data-right-id]");
+  updateSelectOptions(leftSelect, leftSelect.value, rightSelect.value);
+  updateSelectOptions(rightSelect, rightSelect.value, leftSelect.value);
+  const leftId = leftSelect.value;
+  const rightId = rightSelect.value;
+  const diagnostics = card.querySelector("[data-match-diagnostics]");
+  if (diagnostics) diagnostics.innerHTML = `<p>正在刷新权重...</p>`;
+  try {
+    const payload = await api("/api/admin/matches/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        adminToken: state.token,
+        leftId,
+        rightId
+      })
+    });
+    const preview = payload.preview;
+    card.querySelector(".match-admin-head strong").textContent = `最终权重 ${preview.adjustedScore ?? preview.weightBreakdown?.finalWeight ?? preview.score}`;
+    card.querySelector(".match-admin-head small").textContent = `交叉 ${preview.crossWeight ?? preview.score} · 双方个人 ${preview.personalWeight ?? ""} · 原始 ${preview.rawScore}/${preview.maxScore || 240}`;
+    if (diagnostics) diagnostics.outerHTML = renderMatchDiagnostics(preview);
+  } catch (error) {
+    if (diagnostics) diagnostics.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+
 function renderMatches() {
   const editor = $("[data-match-editor]");
   if (!state.matches.length) {
@@ -391,15 +500,15 @@ function renderMatches() {
     <article class="admin-match" data-match-id="${match.id}">
       <div class="match-admin-head">
         <strong>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)}</strong>
-        <small>交叉 ${escapeHtml(match.crossWeight ?? match.score)} · 双方个人 ${escapeHtml(match.personalWeight ?? "")}</small>
+        <small>交叉 ${escapeHtml(match.crossWeight ?? match.score)} · 双方个人 ${escapeHtml(match.personalWeight ?? "")}${match.rawScore !== undefined ? ` · 原始 ${escapeHtml(match.rawScore)}/${escapeHtml(match.maxScore || 240)}` : ""}</small>
         <span>${escapeHtml(statusLabel(match.status))}</span>
         ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
       <label>Moon
-        <select data-left-id>${profileOptions(match.leftId)}</select>
+        <select data-left-id>${compatibleProfileOptions(match.leftId, match.rightId)}</select>
       </label>
       <label>Shade
-        <select data-right-id>${profileOptions(match.rightId)}</select>
+        <select data-right-id>${compatibleProfileOptions(match.rightId, match.leftId)}</select>
       </label>
       <label>状态
         <select data-status>
@@ -409,14 +518,7 @@ function renderMatches() {
       <label>备注
         <textarea data-notes rows="2">${escapeHtml(match.notes || "")}</textarea>
       </label>
-      <p>${(match.reasons || []).map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
-      ${renderBoundaryWarnings(match.boundaryWarnings)}
-      <div class="match-frequency-notes">
-        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(weightText(match.left.matchFrequency))}</span>` : ""}
-        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(weightText(match.right.matchFrequency))}</span>` : ""}
-        <span>交叉相似权重：${escapeHtml(match.crossWeight ?? match.score)}</span>
-        ${match.weightBreakdown ? `<span>重复降权：${escapeHtml(match.weightBreakdown.repeatPenalty || 0)}</span>` : ""}
-      </div>
+      ${renderMatchDiagnostics(match)}
       <button class="secondary-action" data-save-match>保存调整</button>
     </article>
   `).join("");
@@ -488,6 +590,11 @@ document.addEventListener("click", event => {
   }
   const button = event.target.closest("[data-save-match]");
   if (button) saveMatch(button.closest("[data-match-id]"));
+});
+document.addEventListener("change", event => {
+  const select = event.target.closest("[data-left-id], [data-right-id]");
+  if (!select) return;
+  previewMatch(select.closest("[data-match-id]"));
 });
 
 loadAdmin().catch(() => {

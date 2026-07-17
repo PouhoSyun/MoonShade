@@ -1035,7 +1035,8 @@ function mbtiMetricScore(a, b) {
 function scorePair(a, b) {
   if (a.id === b.id || !hardBoundaryCompatible(a, b)) return null;
 
-  let score = 45;
+  const maxScore = 240;
+  let score = 30;
   const reasons = [];
   if (a.intent && b.intent && a.intent === b.intent) {
     score += 6;
@@ -1113,9 +1114,13 @@ function scorePair(a, b) {
     reasons.push("出生年落在期待范围");
   }
   if (aYear && bYear) score -= Math.min(8, Math.abs(aYear - bYear));
+  const rawScore = Math.max(0, Math.round(score));
+  const normalizedScore = Math.max(0, Math.min(100, Math.round((rawScore / maxScore) * 100)));
 
   return {
-    score: Math.max(0, Math.min(99, Math.round(score))),
+    score: normalizedScore,
+    rawScore,
+    maxScore,
     reasons: reasons.slice(0, 4)
   };
 }
@@ -1187,6 +1192,8 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       leftId: best.left.id,
       rightId: best.right.id,
       score: best.score,
+      rawScore: best.rawScore,
+      maxScore: best.maxScore,
       adjustedScore: Math.round(best.adjustedScore),
       crossWeight: best.crossWeight,
       personalWeight: best.personalWeight,
@@ -1237,6 +1244,53 @@ function ensureDailyDraftMatches(data) {
     .filter(match => !(match.roundId === roundId && match.status === "draft"))
     .concat(generated);
   return generated.length > 0;
+}
+
+function matchPreview(left, right, matches, settings) {
+  if (!left || !right) return null;
+  const frequencies = frequencyMapFor([left, right], matches, settings);
+  const leftFrequency = frequencies.get(left.id);
+  const rightFrequency = frequencies.get(right.id);
+  const boundaryWarnings = matchBoundaryWarnings(left, right);
+  const hardBlocked = boundaryWarnings.some(item => item.strict);
+  const scored = hardBlocked ? null : scorePair(left, right);
+  const crossWeight = scored?.score || 0;
+  const personalWeight = (leftFrequency?.personalWeight || 0) + (rightFrequency?.personalWeight || 0);
+  const key = pairKey(left.id, right.id);
+  const history = matchHistory(matches);
+  const repeatedCount = history.pairCounts.get(key) || 0;
+  const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
+  const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
+  return {
+    hardBlocked,
+    score: crossWeight,
+    rawScore: scored?.rawScore || 0,
+    maxScore: scored?.maxScore || 240,
+    crossWeight,
+    personalWeight,
+    adjustedScore: hardBlocked ? 0 : Math.round(personalWeight + crossWeight - repeatPenalty),
+    reasons: scored?.reasons || [],
+    boundaryWarnings,
+    weightBreakdown: {
+      left: {
+        timeWeight: leftFrequency?.timeWeight || 0,
+        clarityWeight: leftFrequency?.clarityWeight || 0,
+        personalWeight: leftFrequency?.personalWeight || 0,
+        genderRank: leftFrequency?.genderRank || null
+      },
+      right: {
+        timeWeight: rightFrequency?.timeWeight || 0,
+        clarityWeight: rightFrequency?.clarityWeight || 0,
+        personalWeight: rightFrequency?.personalWeight || 0,
+        genderRank: rightFrequency?.genderRank || null
+      },
+      crossWeight,
+      repeatPenalty,
+      finalWeight: hardBlocked ? 0 : Math.round(personalWeight + crossWeight - repeatPenalty)
+    },
+    left: publicProfile(left, { frequencyMap: frequencies }),
+    right: publicProfile(right, { frequencyMap: frequencies })
+  };
 }
 
 function publishedMatchesFor(profile, profiles, matches) {
@@ -1553,6 +1607,12 @@ async function handleApi(req, res, url) {
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { published, matches: serializeAdminMatches(data.matches, data.profiles, data.settings) });
     }
+    if (req.method === "POST" && url.pathname === "/api/admin/matches/preview") {
+      const left = data.profiles.find(item => item.id === cleanText(adminBody.leftId, 80));
+      const right = data.profiles.find(item => item.id === cleanText(adminBody.rightId, 80));
+      if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
+      return sendJson(res, 200, { preview: matchPreview(left, right, data.matches, data.settings) });
+    }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users") {
       const result = seedDemoProfiles(data);
       await writeJson(DATA_FILE, data);
@@ -1573,38 +1633,19 @@ async function handleApi(req, res, url) {
       match.notes = cleanText(body.notes, 500);
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
-      const scored = left && right ? scorePair(left, right) : null;
-      if (scored) {
-        const frequencies = frequencyMapFor(data.profiles, data.matches, data.settings);
-        const leftFrequency = frequencies.get(left.id);
-        const rightFrequency = frequencies.get(right.id);
-        const key = pairKey(left.id, right.id);
-        const history = matchHistory(data.matches.filter(item => item.id !== match.id));
-        const repeatedCount = history.pairCounts.get(key) || 0;
-        const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
-        const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
-        match.score = scored.score;
-        match.crossWeight = scored.score;
-        match.personalWeight = (leftFrequency?.personalWeight || 0) + (rightFrequency?.personalWeight || 0);
-        match.adjustedScore = Math.round(match.personalWeight + match.crossWeight - repeatPenalty);
-        match.weightBreakdown = {
-          left: {
-            timeWeight: leftFrequency?.timeWeight || 0,
-            clarityWeight: leftFrequency?.clarityWeight || 0,
-            personalWeight: leftFrequency?.personalWeight || 0,
-            genderRank: leftFrequency?.genderRank || null
-          },
-          right: {
-            timeWeight: rightFrequency?.timeWeight || 0,
-            clarityWeight: rightFrequency?.clarityWeight || 0,
-            personalWeight: rightFrequency?.personalWeight || 0,
-            genderRank: rightFrequency?.genderRank || null
-          },
-          crossWeight: match.crossWeight,
-          repeatPenalty,
-          finalWeight: match.adjustedScore
-        };
-        match.reasons = scored.reasons;
+      const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.id !== match.id), data.settings) : null;
+      if (preview?.hardBlocked) {
+        return sendJson(res, 400, { error: "该组合存在硬性不符合项，不能保存为候选匹配。", warnings: preview.boundaryWarnings });
+      }
+      if (preview) {
+        match.score = preview.score;
+        match.rawScore = preview.rawScore;
+        match.maxScore = preview.maxScore;
+        match.crossWeight = preview.crossWeight;
+        match.personalWeight = preview.personalWeight;
+        match.adjustedScore = preview.adjustedScore;
+        match.weightBreakdown = preview.weightBreakdown;
+        match.reasons = preview.reasons;
       }
       match.updatedAt = new Date().toISOString();
       await writeJson(DATA_FILE, data);
