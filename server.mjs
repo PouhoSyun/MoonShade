@@ -507,7 +507,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedWeekend = ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"];
   const allowedDietaryPreferences = ["喜辣", "喜甜", "喜咸", "清淡", "清真"];
   const allowedValues = ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"];
-  const allowedStyle = ["清冷", "学院", "运动", "中式", "正式", "随性"];
+  const allowedStyle = ["清冷", "学院", "运动", "中式", "正式", "休闲", "文艺", "优雅", "性感", "日系", "欧美", "复古", "哥特"];
   const allowedHair = ["短发", "中长发", "长发", "不设偏好"];
   const allowedGlasses = ["常戴", "偶尔戴", "基本不戴", "不设偏好"];
   const allowedAppearanceFeel = ["成熟", "同龄", "少年", "不明显", "不设偏好"];
