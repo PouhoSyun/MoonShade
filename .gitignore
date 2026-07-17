@@ -1,5 +1,6 @@
 node_modules/
 .env
+smtp_test.bat
 data/moonshade.json
 *.log
 .DS_Store

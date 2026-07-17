@@ -12,7 +12,7 @@ const optionSets = {
   provinces: ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"],
   regions: ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"],
   homeAreas: ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区", "乡村", "流动成长"],
-  disciplines: ["理学", "工学", "人文", "社科", "医学", "经管法", "艺术体育", "其他"],
+  disciplines: ["理学", "工学", "人文", "社科", "医学", "经管", "艺术体育", "其他"],
   intents: ["快速转进", "认真发展", "先交朋友", "慢慢了解"],
   tempos: ["高频交流", "日常分享", "低频稳定", "线下优先"],
   intimacy: ["一见钟情", "自然走进", "先定关系", "保守踏实"],
@@ -30,7 +30,9 @@ const scaleQuestions = [
   { key: "ambition", title: "面对学业或事业，我更像", left: "顺其自然", right: "持续进取" },
   { key: "decision", title: "遇到问题和选择时，我更依赖", left: "直觉感受", right: "逻辑证据" },
   { key: "novelty", title: "日常选择里，我更常", left: "沿用熟悉方式", right: "尝试新鲜事物" },
-  { key: "schedule", title: "我的作息节律更接近", left: "夜间活跃", right: "早起清醒" }
+  { key: "schedule", title: "我的作息节律更接近", left: "夜间活跃", right: "早起清醒" },
+  { key: "marriage", title: "面对婚姻，我目前更接近", left: "不以婚姻为目标", right: "期待稳定婚姻" },
+  { key: "fertility", title: "面对生育，我目前更接近", left: "不考虑生育", right: "期待养育孩子" }
 ];
 
 const mbtiDimensions = [
@@ -60,7 +62,7 @@ const pages = [
   {
     title: "第二卷：相处节奏",
     short: "相处节奏",
-    desc: "左栏选择自己更符合的描述，右栏可多选划定可以接受的范围。",
+    desc: "左栏选择自己更符合的描述，右栏选择期待对方更靠近哪一侧。已提交过问卷的用户请补充婚姻和生育意向。",
     pairs: [
       [{ type: "chips", name: "intent", label: "这次更期待", options: optionSets.intents }, { type: "chips", multi: true, name: "idealIntent", label: "希望对方的期待", options: optionSets.intents }],
       [{ type: "chips", name: "tempo", label: "舒服的沟通节奏", options: optionSets.tempos }, { type: "chips", multi: true, name: "idealTempo", label: "可接受沟通节奏", options: optionSets.tempos }],
@@ -614,6 +616,13 @@ function collectForm() {
   return { ...formData, ...state.selected, authToken: state.authToken, token: state.token, consent: form.elements.consent.checked };
 }
 
+function needsSurveySupplement(profile) {
+  return !Number.isInteger(profile?.selfMetrics?.marriage)
+    || !Number.isInteger(profile?.idealMetrics?.marriage)
+    || !Number.isInteger(profile?.selfMetrics?.fertility)
+    || !Number.isInteger(profile?.idealMetrics?.fertility);
+}
+
 function fillForm(profile) {
   if (!profile) return;
   state.profile = profile;
@@ -633,7 +642,9 @@ function fillForm(profile) {
     if (form.elements[name]) form.elements[name].value = profile[name] || "";
   });
   form.elements.consent.checked = profile.consent === true;
-  $("[data-submit-state]").textContent = "本轮问卷已提交";
+  $("[data-submit-state]").textContent = needsSurveySupplement(profile)
+    ? "问卷有新增题目待补充"
+    : "本轮问卷已提交";
   renderSurveyPage();
 }
 

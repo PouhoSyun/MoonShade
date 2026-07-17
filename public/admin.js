@@ -79,11 +79,17 @@ function scheduleText(frequency) {
 }
 
 function frequencyText(frequency) {
-  if (!frequency) return "标准频率";
+  if (!frequency) return "暂无权重";
   const gap = frequency.daysSinceLastMatch === null || frequency.daysSinceLastMatch === undefined
     ? "暂无成功匹配"
     : `距上次 ${frequency.daysSinceLastMatch} 天`;
-  return `${frequency.label} · ${gap}`;
+  return `${frequency.label} · 个人权重 ${frequency.personalWeight ?? frequency.priority ?? 0} · ${gap}`;
+}
+
+function weightText(frequency) {
+  if (!frequency) return "时间 0 / 画像 0 / 个人 0";
+  const clarityPercent = Number.isFinite(Number(frequency.clarityRatio)) ? Math.round(Number(frequency.clarityRatio) * 100) : 0;
+  return `时间 ${frequency.timeWeight ?? 0} · 画像 ${frequency.clarityWeight ?? 0}（${clarityPercent}%）· 个人 ${frequency.personalWeight ?? frequency.priority ?? 0} · 性别序 ${frequency.genderRank || "-"}`;
 }
 
 function appendAdminLog(message) {
@@ -250,14 +256,14 @@ function renderSettings() {
   $("[data-admin-match-count]").textContent = String(state.matches.length);
   $("[data-admin-interval]").textContent = String(state.settings.matchIntervalDays || 3);
   $("[data-admin-round-note]").textContent = state.round
-    ? `${state.round.label}，原则上每 ${state.settings.matchIntervalDays} 天生成一次候选匹配。`
+    ? `${state.round.label}，候选匹配会按每日权重自动刷新，管理员审核后发布给用户。`
     : "轮次信息加载中。";
 }
 
 function renderProfiles() {
   const table = $("[data-profile-table]");
   table.innerHTML = `
-    <thead><tr><th>查看</th><th>邮箱</th><th>展示名</th><th>性别</th><th>频率</th><th>上次成功</th><th>预计下次</th><th>身份</th><th>校区</th><th>方向</th><th>期待</th><th>更新时间</th></tr></thead>
+    <thead><tr><th>查看</th><th>邮箱</th><th>展示名</th><th>性别</th><th>个人权重</th><th>上次成功</th><th>预计下次</th><th>身份</th><th>校区</th><th>方向</th><th>期待</th><th>更新时间</th></tr></thead>
     <tbody>
       ${state.profiles.map(profile => `
         <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}">
@@ -342,9 +348,13 @@ function renderProfileDetail() {
       ["自我介绍", profile.selfIntro],
       ["授权参与", profile.consent ? "是" : "否"]
     ])}
-    ${detailBlock("匹配频率", [
-      ["频率标签", profile.matchFrequency?.label],
-      ["建议间隔", profile.matchFrequency?.intervalDays ? `${profile.matchFrequency.intervalDays} 天` : ""],
+    ${detailBlock("匹配权重", [
+      ["权重标签", profile.matchFrequency?.label],
+      ["时间权重", profile.matchFrequency?.timeWeight],
+      ["画像清晰权重", profile.matchFrequency?.clarityWeight],
+      ["个人权重", profile.matchFrequency?.personalWeight],
+      ["同性别排序", profile.matchFrequency?.genderRank],
+      ["画像清晰度", profile.matchFrequency?.clarityRatio ? `${Math.round(profile.matchFrequency.clarityRatio * 100)}%（${profile.matchFrequency.clarityFilled}/${profile.matchFrequency.clarityTotal}）` : ""],
       ["距上次成功匹配", profile.matchFrequency?.daysSinceLastMatch === null || profile.matchFrequency?.daysSinceLastMatch === undefined ? "暂无成功匹配" : `${profile.matchFrequency.daysSinceLastMatch} 天`],
       ["上次成功匹配时间", formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt)],
       ["预计下次分配时间", scheduleText(profile.matchFrequency)],
@@ -360,16 +370,16 @@ function profileOptions(selectedId) {
 function renderMatches() {
   const editor = $("[data-match-editor]");
   if (!state.matches.length) {
-    editor.innerHTML = `<p class="empty-state">还没有生成本轮匹配。</p>`;
+    editor.innerHTML = `<p class="empty-state">今天还没有可用候选匹配。人数不足或性别/偏好边界不兼容时可能为空。</p>`;
     return;
   }
   editor.innerHTML = state.matches.map(match => `
     <article class="admin-match" data-match-id="${match.id}">
       <div class="match-admin-head">
-        <strong>${escapeHtml(match.score)} 分</strong>
-        ${match.adjustedScore ? `<small>调度分 ${escapeHtml(match.adjustedScore)}</small>` : ""}
+        <strong>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)}</strong>
+        <small>交叉 ${escapeHtml(match.crossWeight ?? match.score)} · 双方个人 ${escapeHtml(match.personalWeight ?? "")}</small>
         <span>${escapeHtml(statusLabel(match.status))}</span>
-        ${match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : ""}
+        ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
       <label>Moon
         <select data-left-id>${profileOptions(match.leftId)}</select>
@@ -387,17 +397,14 @@ function renderMatches() {
       </label>
       <p>${(match.reasons || []).map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
       <div class="match-frequency-notes">
-        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(frequencyText(match.left.matchFrequency))}</span>` : ""}
-        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(frequencyText(match.right.matchFrequency))}</span>` : ""}
+        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(weightText(match.left.matchFrequency))}</span>` : ""}
+        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(weightText(match.right.matchFrequency))}</span>` : ""}
+        <span>交叉相似权重：${escapeHtml(match.crossWeight ?? match.score)}</span>
+        ${match.weightBreakdown ? `<span>重复降权：${escapeHtml(match.weightBreakdown.repeatPenalty || 0)}</span>` : ""}
       </div>
       <button class="secondary-action" data-save-match>保存调整</button>
     </article>
   `).join("");
-}
-
-async function generateMatches() {
-  await api("/api/admin/matches/generate", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
-  await loadAdmin();
 }
 
 async function publishMatches() {
@@ -453,7 +460,6 @@ bindAdminAuthReset();
 $("[data-admin-login-button]").addEventListener("click", login);
 $("[data-admin-logout]").addEventListener("click", logout);
 $("[data-refresh-admin]").addEventListener("click", loadAdmin);
-$("[data-generate-matches]").addEventListener("click", generateMatches);
 $("[data-publish-matches]").addEventListener("click", publishMatches);
 $("[data-seed-demo-users]").addEventListener("click", seedDemoUsers);
 $("[data-save-settings]").addEventListener("click", saveSettings);

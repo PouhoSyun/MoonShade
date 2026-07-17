@@ -122,11 +122,25 @@ function cleanText(value, max = 200) {
   return String(value || "").trim().slice(0, max);
 }
 
+function normalizeDiscipline(value) {
+  return cleanText(value, 40) === "经管法" ? "经管" : cleanText(value, 40);
+}
+
+function normalizeDisciplineList(value) {
+  return cleanList(value).map(normalizeDiscipline).filter(Boolean);
+}
+
 function normalizeData(data) {
+  const profiles = Array.isArray(data.profiles) ? data.profiles.map(profile => ({
+    ...profile,
+    discipline: normalizeDiscipline(profile.discipline),
+    department: normalizeDiscipline(profile.department),
+    idealDisciplines: normalizeDisciplineList(profile.idealDisciplines)
+  })) : [];
   return {
     ...defaultData,
     ...data,
-    profiles: Array.isArray(data.profiles) ? data.profiles : [],
+    profiles,
     users: Array.isArray(data.users) ? data.users : [],
     verifications: Array.isArray(data.verifications) ? data.verifications : [],
     adminSessions: Array.isArray(data.adminSessions) ? data.adminSessions : [],
@@ -372,7 +386,7 @@ function cleanList(value, allowed = []) {
 
 function cleanMetricMap(value = {}, multi = false) {
   const source = value && typeof value === "object" ? value : {};
-  const keys = ["warmth", "ambition", "decision", "novelty", "schedule"];
+  const keys = ["warmth", "ambition", "decision", "novelty", "schedule", "marriage", "fertility"];
   return Object.fromEntries(keys.map(key => {
     if (multi) {
       const numbers = cleanList(source[key]).map(Number).filter(item => Number.isInteger(item) && item >= -3 && item <= 3);
@@ -457,7 +471,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedProvinces = ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"];
   const allowedRegions = ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"];
   const allowedHomeAreas = ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区", "乡村", "流动成长"];
-  const allowedDisciplines = ["理学", "工学", "人文", "社科", "医学", "经管法", "艺术体育", "其他"];
+  const allowedDisciplines = ["理学", "工学", "人文", "社科", "医学", "经管", "艺术体育", "其他"];
   const allowedIntent = ["快速转进", "认真发展", "先交朋友", "慢慢了解"];
   const allowedTempo = ["高频交流", "日常分享", "低频稳定", "线下优先"];
   const allowedIntimacy = ["一见钟情", "自然走进", "先定关系", "保守踏实"];
@@ -483,7 +497,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     seeking: cleanList(input.seeking, allowedSeek),
     city: cleanText(input.city || cleanList(input.location, allowedLocations).join("、"), 40),
     school: "北京大学",
-    department: cleanText(input.department || input.discipline, 80),
+    department: normalizeDiscipline(input.department || input.discipline),
     stage: cleanText(input.stage || input.identity, 40),
     identity: allowedIdentities.includes(input.identity) ? input.identity : "",
     idealIdentities: cleanList(input.idealIdentities, allowedIdentities),
@@ -495,8 +509,8 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     idealHometownRegions: cleanList(input.idealHometownRegions, allowedRegions),
     homeArea: allowedHomeAreas.includes(input.homeArea) ? input.homeArea : "",
     idealHomeAreas: cleanList(input.idealHomeAreas, allowedHomeAreas),
-    discipline: allowedDisciplines.includes(input.discipline) ? input.discipline : "",
-    idealDisciplines: cleanList(input.idealDisciplines, allowedDisciplines),
+    discipline: allowedDisciplines.includes(normalizeDiscipline(input.discipline)) ? normalizeDiscipline(input.discipline) : "",
+    idealDisciplines: normalizeDisciplineList(input.idealDisciplines).filter(item => allowedDisciplines.includes(item)),
     intent: allowedIntent.includes(input.intent) ? input.intent : "",
     idealIntent: cleanList(input.idealIntent, allowedIntent),
     tempo: allowedTempo.includes(input.tempo) ? input.tempo : "",
@@ -546,6 +560,10 @@ function validateProfile(profile) {
   if ((!Array.isArray(profile.location) || profile.location.length === 0) && !profile.city) missing.push("所在校区");
   if (!profile.intent) missing.push("匹配期待");
   if (!profile.tempo) missing.push("沟通节奏");
+  if (!Number.isInteger(profile.selfMetrics?.marriage)) missing.push("我的婚姻意向");
+  if (!Number.isInteger(profile.idealMetrics?.marriage)) missing.push("期待对方的婚姻意向");
+  if (!Number.isInteger(profile.selfMetrics?.fertility)) missing.push("我的生育意向");
+  if (!Number.isInteger(profile.idealMetrics?.fertility)) missing.push("期待对方的生育意向");
   if (!profile.contactValue) missing.push("联系方式");
   if (!profile.consent) missing.push("授权参与本轮匹配");
   return missing;
@@ -662,7 +680,9 @@ function metricScore(a, b) {
     ambition: "学业事业节奏",
     decision: "决策方式",
     novelty: "新鲜感偏好",
-    schedule: "作息节律"
+    schedule: "作息节律",
+    marriage: "婚姻意向",
+    fertility: "生育意向"
   };
   let score = 0;
   const reasons = [];
@@ -726,96 +746,138 @@ function containsValue(value, expected) {
   return Array.isArray(value) ? value.includes(expected) : value === expected;
 }
 
-function rareTraitCount(profile, pool) {
-  const traits = [
-    ["identity", profile.identity],
-    ["discipline", profile.discipline],
-    ["intent", profile.intent],
-    ["tempo", profile.tempo],
-    ["intimacy", profile.intimacy],
-    ["intimacyTiming", profile.intimacyTiming],
-    ...(Array.isArray(profile.selfValues) ? profile.selfValues.map(value => ["selfValues", value]) : []),
-    ...(Array.isArray(profile.selfStyle) ? profile.selfStyle.map(value => ["selfStyle", value]) : [])
-  ].filter(([, value]) => value);
-  const unique = new Map(traits.map(([field, value]) => [`${field}:${value}`, [field, value]]));
-  const rareLimit = Math.max(2, Math.ceil(pool.length * 0.28));
-  return [...unique.values()].filter(([field, value]) => {
-    const count = pool.filter(item => containsValue(item[field], value)).length;
-    return count > 0 && count <= rareLimit && count < pool.length;
-  }).length;
+function hasAnswer(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).length > 0;
+  if (value && typeof value === "object") return Object.values(value).some(hasAnswer);
+  return value !== null && value !== undefined && value !== "";
 }
 
-function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now()) {
-  const pool = profiles.filter(item => item.consent);
-  const genderTotal = pool.filter(item => item.gender === profile.gender).length || 1;
-  const genderShare = pool.length ? genderTotal / pool.length : 1;
-  const idealLengths = [
-    listLength(profile.seeking),
-    listLength(profile.idealIdentities),
-    listLength(profile.idealLocations),
-    listLength(profile.idealHometownRegions),
-    listLength(profile.idealHomeAreas),
-    listLength(profile.idealDisciplines),
-    listLength(profile.idealIntent),
-    listLength(profile.idealTempo),
-    listLength(profile.idealIntimacy),
-    listLength(profile.idealIntimacyTiming),
-    listLength(profile.idealWeekends),
-    listLength(profile.idealValues),
-    listLength(profile.idealStyle)
+function metricAnswered(metrics, key) {
+  return Number.isInteger(metrics?.[key]);
+}
+
+function profileClarity(profile) {
+  const checks = [
+    profile.displayName,
+    profile.gender,
+    profile.seeking,
+    profile.birthYear,
+    profile.identity,
+    profile.schoolType,
+    profile.location,
+    profile.hometownProvince,
+    profile.homeArea,
+    profile.discipline,
+    profile.intent,
+    profile.tempo,
+    profile.intimacy,
+    profile.intimacyTiming,
+    profile.mbtiMetrics,
+    profile.selfWeekends,
+    profile.selfValues,
+    profile.selfStyle,
+    profile.height,
+    profile.appearanceFeel,
+    profile.hair,
+    profile.glasses,
+    profile.idealBirthYearMin || profile.idealBirthYearMax,
+    profile.idealIdentities,
+    profile.idealLocations,
+    profile.idealHometownRegions,
+    profile.idealHomeAreas,
+    profile.idealDisciplines,
+    profile.idealIntent,
+    profile.idealTempo,
+    profile.idealIntimacy,
+    profile.idealIntimacyTiming,
+    profile.idealMbtiMetrics,
+    profile.idealWeekends,
+    profile.idealValues,
+    profile.idealStyle,
+    profile.idealHeight,
+    profile.idealAppearanceFeel,
+    profile.idealHair,
+    profile.idealGlasses,
+    profile.selfIntro,
+    profile.contactValue
   ];
-  const precise = idealLengths.filter(length => length >= 1 && length <= 3).length;
-  const tooBroad = idealLengths.filter(length => length >= 5).length + (profile.seeking?.includes("不限") ? 2 : 0);
-  const tooNarrow = idealLengths.filter(length => length === 1).length;
-  const rareGender = genderShare <= 0.38;
-  const rareTraits = rareTraitCount(profile, pool);
-  const rarePersonality = rareTraits >= 2;
+  const metricKeys = ["warmth", "ambition", "decision", "novelty", "schedule", "marriage", "fertility"];
+  const metricChecks = [
+    ...metricKeys.map(key => metricAnswered(profile.selfMetrics, key)),
+    ...metricKeys.map(key => metricAnswered(profile.idealMetrics, key))
+  ];
+  const total = checks.length + metricChecks.length;
+  const filled = checks.filter(hasAnswer).length + metricChecks.filter(Boolean).length;
+  const ratio = total ? filled / total : 0;
+  return {
+    filled,
+    total,
+    ratio,
+    clarityWeight: Math.round(ratio * 40)
+  };
+}
+
+function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map()) {
   const interval = cleanSettings(settings).matchIntervalDays;
   const lastAt = history.lastMatchedAt.get(profile.id) || 0;
   const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
-  let label = "标准频率";
-  let intervalDays = interval;
-  const reasons = [];
-  if (rareGender) reasons.push("性别画像相对稀缺");
-  if (rarePersonality) reasons.push("相处节奏或性格画像相对稀缺");
-  if (precise >= 8) reasons.push("TA 画像较精准");
-  if (tooBroad >= 5) reasons.push("TA 画像偏宽");
-  if (tooNarrow >= 9) reasons.push("TA 画像偏窄");
-  if (rareGender || rarePersonality || precise >= 8) {
-    label = "高频";
-    intervalDays = Math.max(1, Math.floor(interval / 2));
-  }
-  if (tooBroad >= 5 || tooNarrow >= 9) {
-    label = "低频观察";
-    intervalDays = interval * 2;
-  }
-  const nextEligibleAtMs = lastAt ? lastAt + intervalDays * 86_400_000 : now;
-  const referenceDays = Math.max(0, Math.ceil((nextEligibleAtMs - now) / 86_400_000));
-  const overdue = nextEligibleAtMs <= now;
-  const waitBoost = daysSince === null
-    ? 18
-    : Math.min(36, (daysSince >= intervalDays ? 10 : 0) + Math.floor(Math.max(0, daysSince - intervalDays) / Math.max(1, intervalDays)) * 8);
-  const notYetPenalty = overdue ? 0 : 12 + referenceDays * 3;
-  if (daysSince === null) reasons.push("尚无成功匹配记录");
-  else if (daysSince >= intervalDays) reasons.push(`距上次成功匹配 ${daysSince} 天`);
+  const timeWeight = daysSince === null ? 28 : Math.min(40, Math.max(0, daysSince) * 4);
+  const clarity = profileClarity(profile);
+  const personalWeight = timeWeight + clarity.clarityWeight;
+  const referenceDays = daysSince === null ? 0 : Math.max(0, interval - daysSince);
+  const nextEligibleAtMs = lastAt ? lastAt + interval * 86_400_000 : now;
+  const eligible = nextEligibleAtMs <= now;
+  const genderRank = genderRanks.get(profile.id) || null;
+  const label = personalWeight >= 58 ? "优先候选" : personalWeight >= 42 ? "标准候选" : "待补充画像";
+  const reason = [
+    daysSince === null ? "尚无成功匹配记录" : `距上次成功匹配 ${daysSince} 天`,
+    `画像清晰度 ${Math.round(clarity.ratio * 100)}%`,
+    genderRank ? `同性别排序第 ${genderRank}` : ""
+  ].filter(Boolean).join("；");
   return {
     label,
-    intervalDays,
+    intervalDays: interval,
     daysSinceLastMatch: daysSince,
     lastSuccessfulMatchAt: lastAt ? new Date(lastAt).toISOString() : null,
     expectedNextAllocationAt: new Date(nextEligibleAtMs).toISOString(),
     nextEligibleAt: new Date(nextEligibleAtMs).toISOString(),
     referenceDays,
-    eligible: overdue,
-    priority: (rareGender ? 10 : 0) + (rarePersonality ? 8 : 0) + Math.min(12, precise) - tooBroad * 2 - Math.max(0, tooNarrow - 8) + waitBoost - notYetPenalty,
-    reason: reasons.join("；") || "画像分布适中"
+    eligible,
+    timeWeight,
+    clarityWeight: clarity.clarityWeight,
+    clarityRatio: Number(clarity.ratio.toFixed(3)),
+    clarityFilled: clarity.filled,
+    clarityTotal: clarity.total,
+    personalWeight,
+    genderRank,
+    priority: personalWeight,
+    reason
   };
+}
+
+function genderRanksFor(profiles, history, settings, now = Date.now()) {
+  const preliminary = profiles.map(profile => {
+    const lastAt = history.lastMatchedAt.get(profile.id) || 0;
+    const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
+    const timeWeight = daysSince === null ? 28 : Math.min(40, Math.max(0, daysSince) * 4);
+    const clarityWeight = profileClarity(profile).clarityWeight;
+    return { id: profile.id, gender: profile.gender || "未填写", personalWeight: timeWeight + clarityWeight };
+  });
+  const ranks = new Map();
+  for (const gender of [...new Set(preliminary.map(item => item.gender))]) {
+    preliminary
+      .filter(item => item.gender === gender)
+      .sort((a, b) => b.personalWeight - a.personalWeight)
+      .forEach((item, index) => ranks.set(item.id, index + 1));
+  }
+  return ranks;
 }
 
 function frequencyMapFor(profiles, matches, settings) {
   const history = matchHistory(matches);
   const now = Date.now();
-  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now)]));
+  const ranks = genderRanksFor(profiles, history, settings, now);
+  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now, ranks)]));
 }
 
 function mbtiMetricScore(a, b) {
@@ -944,11 +1006,16 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const pool = profiles.filter(profile => profile.consent);
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
-  const activePool = pool;
+  const activePool = [...pool].sort((a, b) => {
+    const left = frequencies.get(a.id)?.genderRank || 999;
+    const right = frequencies.get(b.id)?.genderRank || 999;
+    return left - right;
+  });
   const used = new Set();
   const candidates = [];
   const pairs = [];
-  const batchId = `${roundId}-${Date.now().toString(36)}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const batchId = `${roundId}-${today}`;
   for (let i = 0; i < activePool.length; i += 1) {
     for (let j = i + 1; j < activePool.length; j += 1) {
       const scored = scorePair(activePool[i], activePool[j]);
@@ -958,9 +1025,11 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       const lastRepeat = history.lastPartners.get(activePool[i].id) === activePool[j].id || history.lastPartners.get(activePool[j].id) === activePool[i].id;
       const leftFrequency = frequencies.get(activePool[i].id) || { priority: 0 };
       const rightFrequency = frequencies.get(activePool[j].id) || { priority: 0 };
-      const schedulePenalty = (leftFrequency.eligible ? 0 : 18) + (rightFrequency.eligible ? 0 : 18);
-      const adjustedScore = scored.score + leftFrequency.priority + rightFrequency.priority - schedulePenalty - repeatedCount * 22 - (lastRepeat ? 34 : 0);
-      candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, repeatedCount, lastRepeat, ...scored });
+      const personalWeight = (leftFrequency.personalWeight || 0) + (rightFrequency.personalWeight || 0);
+      const crossWeight = scored.score;
+      const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
+      const adjustedScore = personalWeight + crossWeight - repeatPenalty;
+      candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, ...scored });
     }
   }
   candidates.sort((a, b) => b.adjustedScore - a.adjustedScore);
@@ -974,16 +1043,36 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       id: crypto.randomUUID(),
       roundId,
       batchId,
+      generatedFor: today,
+      algorithmVersion: "daily-weight-v1",
       leftId: best.left.id,
       rightId: best.right.id,
       score: best.score,
       adjustedScore: Math.round(best.adjustedScore),
+      crossWeight: best.crossWeight,
+      personalWeight: best.personalWeight,
+      weightBreakdown: {
+        left: {
+          timeWeight: leftFrequency?.timeWeight || 0,
+          clarityWeight: leftFrequency?.clarityWeight || 0,
+          personalWeight: leftFrequency?.personalWeight || 0,
+          genderRank: leftFrequency?.genderRank || null
+        },
+        right: {
+          timeWeight: rightFrequency?.timeWeight || 0,
+          clarityWeight: rightFrequency?.clarityWeight || 0,
+          personalWeight: rightFrequency?.personalWeight || 0,
+          genderRank: rightFrequency?.genderRank || null
+        },
+        crossWeight: best.crossWeight,
+        repeatPenalty: best.repeatedCount * 22 + (best.lastRepeat ? 34 : 0),
+        finalWeight: Math.round(best.adjustedScore)
+      },
       reasons: [
         ...best.reasons,
-        best.lastRepeat ? "已避让上次搭档后仍为当前最优" : "已参考历史搭档避重",
-        `${best.left.displayName}：${leftFrequency?.label || "标准频率"}`,
-        `${best.right.displayName}：${rightFrequency?.label || "标准频率"}`,
-        leftFrequency?.eligible && rightFrequency?.eligible ? "双方均已到参考分配时间" : "已参考个人分配时间作降权"
+        `个人权重合计 ${Math.round(best.personalWeight)}`,
+        `交叉相似权重 ${Math.round(best.crossWeight)}`,
+        best.lastRepeat ? "已对上次搭档重复作降权" : "已参考历史搭档避重"
       ].slice(0, 8),
       status: "draft",
       notes: "",
@@ -996,6 +1085,18 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
     });
   }
   return pairs;
+}
+
+function ensureDailyDraftMatches(data) {
+  const roundId = currentRound(new Date(), data.settings).id;
+  const today = new Date().toISOString().slice(0, 10);
+  const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today);
+  if (hasTodayDraft) return false;
+  const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
+  data.matches = data.matches
+    .filter(match => !(match.roundId === roundId && match.status === "draft"))
+    .concat(generated);
+  return generated.length > 0;
 }
 
 function publishedMatchesFor(profile, profiles, matches) {
@@ -1052,7 +1153,7 @@ function demoProfile(overrides) {
     homeArea: overrides.homeArea || "直辖市/省会/首府/计划单列市",
     idealHomeAreas: overrides.idealHomeAreas || ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区"],
     discipline: overrides.discipline,
-    idealDisciplines: overrides.idealDisciplines || ["理学", "工学", "人文", "社科", "经管法"],
+    idealDisciplines: overrides.idealDisciplines || ["理学", "工学", "人文", "社科", "经管"],
     intent: overrides.intent,
     idealIntent: overrides.idealIntent || ["认真发展", "慢慢了解", overrides.intent].filter(Boolean),
     tempo: overrides.tempo,
@@ -1075,8 +1176,8 @@ function demoProfile(overrides) {
     idealGlasses: overrides.idealGlasses || ["不设偏好"],
     appearanceFeel: overrides.appearanceFeel || "同龄",
     idealAppearanceFeel: overrides.idealAppearanceFeel || ["不设偏好"],
-    selfMetrics: overrides.selfMetrics || { warmth: 3, ambition: 1, decision: 1, novelty: 1, schedule: 1 },
-    idealMetrics: overrides.idealMetrics || { warmth: 3, ambition: 3, decision: 3, novelty: 3, schedule: 3 },
+    selfMetrics: overrides.selfMetrics || { warmth: 3, ambition: 1, decision: 1, novelty: 1, schedule: 1, marriage: 3, fertility: 1 },
+    idealMetrics: overrides.idealMetrics || { warmth: 3, ambition: 3, decision: 3, novelty: 3, schedule: 3, marriage: 3, fertility: 3 },
     mbtiMetrics: overrides.mbtiMetrics || { ei: -1, sn: 1, tf: 1, jp: 1 },
     idealMbtiMetrics: overrides.idealMbtiMetrics || { ei: -1, sn: 1, tf: 1, jp: 1 },
     height: overrides.height,
@@ -1099,7 +1200,7 @@ function seedDemoProfiles(data) {
     demoProfile({ id: "demo-qinghe", roundId, displayName: "清和", email: "2400000002@stu.pku.edu.cn", birthYear: 2001, gender: "女", seeking: ["男"], identity: "硕士生", location: ["万柳", "燕园"], hometownProvince: "江苏", discipline: "社科", intent: "慢慢了解", tempo: "高频交流", selfWeekends: ["外出旅行", "散步游览"], selfValues: ["共同成长", "保持好奇"], selfStyle: ["随性", "学院"], height: 168, idealHeight: 179, contactValue: "demo_qinghe" }),
     demoProfile({ id: "demo-yunting", roundId, displayName: "云亭", email: "2400000003@stu.pku.edu.cn", birthYear: 2000, gender: "女", seeking: ["男"], identity: "博士生", location: ["学院路"], hometownProvince: "浙江", discipline: "理学", intent: "认真发展", tempo: "低频稳定", selfWeekends: ["自习工作", "做饭探店"], selfValues: ["生活有序", "边界清晰"], selfStyle: ["正式", "清冷"], height: 162, idealHeight: 176, contactValue: "demo_yunting" }),
     demoProfile({ id: "demo-mingyuan", roundId, displayName: "明远", email: "2400000004@pku.edu.cn", birthYear: 1999, gender: "男", seeking: ["女"], identity: "硕士生", location: ["燕园"], hometownProvince: "河北", discipline: "工学", intent: "认真发展", tempo: "日常分享", selfWeekends: ["运动户外", "散步游览"], selfValues: ["坦诚表达", "共同成长"], selfStyle: ["学院", "运动"], height: 180, idealHeight: 166, contactValue: "demo_mingyuan" }),
-    demoProfile({ id: "demo-zichen", roundId, displayName: "子辰", email: "2400000005@pku.edu.cn", birthYear: 2001, gender: "男", seeking: ["女"], identity: "本科生", location: ["万柳"], hometownProvince: "广东", discipline: "经管法", intent: "慢慢了解", tempo: "高频交流", selfWeekends: ["外出旅行", "朋友聚会"], selfValues: ["保持好奇", "情绪稳定"], selfStyle: ["随性", "正式"], height: 176, idealHeight: 168, contactValue: "demo_zichen" }),
+    demoProfile({ id: "demo-zichen", roundId, displayName: "子辰", email: "2400000005@pku.edu.cn", birthYear: 2001, gender: "男", seeking: ["女"], identity: "本科生", location: ["万柳"], hometownProvince: "广东", discipline: "经管", intent: "慢慢了解", tempo: "高频交流", selfWeekends: ["外出旅行", "朋友聚会"], selfValues: ["保持好奇", "情绪稳定"], selfStyle: ["随性", "正式"], height: 176, idealHeight: 168, contactValue: "demo_zichen" }),
     demoProfile({ id: "demo-huaiyu", roundId, displayName: "怀玉", email: "2400000006@stu.pku.edu.cn", birthYear: 1998, gender: "男", seeking: ["女"], identity: "博士生", location: ["学院路", "燕园"], hometownProvince: "辽宁", discipline: "理学", intent: "快速转进", tempo: "低频稳定", selfWeekends: ["自习工作", "做饭探店"], selfValues: ["生活有序", "边界清晰"], selfStyle: ["正式", "中式"], height: 179, idealHeight: 165, contactValue: "demo_huaiyu" })
   ];
   const existing = new Map(data.profiles.map(profile => [profile.id, profile]));
@@ -1129,7 +1230,10 @@ function adminProfile(profile, context = {}) {
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
   const frequencies = frequencyMapFor(profiles, historyMatches, settings);
-  return [...matches].sort((a, b) => matchTime(b) - matchTime(a)).map(match => ({
+  return [...matches].sort((a, b) => {
+    if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || 0) - (a.adjustedScore || 0);
+    return matchTime(b) - matchTime(a);
+  }).map(match => ({
     ...match,
     left: byId.get(match.leftId) ? publicProfile(byId.get(match.leftId), { frequencyMap: frequencies }) : null,
     right: byId.get(match.rightId) ? publicProfile(byId.get(match.rightId), { frequencyMap: frequencies }) : null
@@ -1271,6 +1375,8 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, { profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })), users: data.users });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/matches") {
+      const changed = ensureDailyDraftMatches(data);
+      if (changed) await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { matches: serializeAdminMatches(data.matches, data.profiles, data.settings), profiles: data.profiles.map(publicProfile) });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/settings") {
@@ -1324,7 +1430,35 @@ async function handleApi(req, res, url) {
       const right = data.profiles.find(item => item.id === match.rightId);
       const scored = left && right ? scorePair(left, right) : null;
       if (scored) {
+        const frequencies = frequencyMapFor(data.profiles, data.matches, data.settings);
+        const leftFrequency = frequencies.get(left.id);
+        const rightFrequency = frequencies.get(right.id);
+        const key = pairKey(left.id, right.id);
+        const history = matchHistory(data.matches.filter(item => item.id !== match.id));
+        const repeatedCount = history.pairCounts.get(key) || 0;
+        const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
+        const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
         match.score = scored.score;
+        match.crossWeight = scored.score;
+        match.personalWeight = (leftFrequency?.personalWeight || 0) + (rightFrequency?.personalWeight || 0);
+        match.adjustedScore = Math.round(match.personalWeight + match.crossWeight - repeatPenalty);
+        match.weightBreakdown = {
+          left: {
+            timeWeight: leftFrequency?.timeWeight || 0,
+            clarityWeight: leftFrequency?.clarityWeight || 0,
+            personalWeight: leftFrequency?.personalWeight || 0,
+            genderRank: leftFrequency?.genderRank || null
+          },
+          right: {
+            timeWeight: rightFrequency?.timeWeight || 0,
+            clarityWeight: rightFrequency?.clarityWeight || 0,
+            personalWeight: rightFrequency?.personalWeight || 0,
+            genderRank: rightFrequency?.genderRank || null
+          },
+          crossWeight: match.crossWeight,
+          repeatPenalty,
+          finalWeight: match.adjustedScore
+        };
         match.reasons = scored.reasons;
       }
       match.updatedAt = new Date().toISOString();
