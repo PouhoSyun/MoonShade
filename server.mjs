@@ -434,6 +434,18 @@ function cleanSettings(input = {}) {
   };
 }
 
+const currentIntimacyOptions = ["开放态度", "关系决定", "暂无打算", "柏拉图式"];
+const currentIntimacyTimingOptions = ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"];
+
+function hasCurrentOption(value, allowed) {
+  return allowed.includes(value);
+}
+
+function hasCurrentOptionList(value, allowed) {
+  const list = Array.isArray(value) ? value : [];
+  return list.length > 0 && list.every(item => allowed.includes(item));
+}
+
 function currentRound(now = new Date(), settings = defaultData.settings) {
   const clean = cleanSettings(settings);
   const intervalMs = clean.matchIntervalDays * 86_400_000;
@@ -474,8 +486,6 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedDisciplines = ["理学", "工学", "人文", "社科", "医学", "经管", "艺术体育", "其他"];
   const allowedIntent = ["快速转进", "认真发展", "先交朋友", "慢慢了解"];
   const allowedTempo = ["高频交流", "日常分享", "低频稳定", "线下优先"];
-  const allowedIntimacy = ["一见钟情", "自然走进", "先定关系", "保守踏实"];
-  const allowedIntimacyTiming = ["不接受", "婚后", "有稳定好感后", "相熟一到三个月后", "顺其自然"];
   const allowedWeekend = ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"];
   const allowedValues = ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"];
   const allowedStyle = ["清冷", "学院", "运动", "中式", "正式", "随性"];
@@ -515,10 +525,10 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     idealIntent: cleanList(input.idealIntent, allowedIntent),
     tempo: allowedTempo.includes(input.tempo) ? input.tempo : "",
     idealTempo: cleanList(input.idealTempo, allowedTempo),
-    intimacy: allowedIntimacy.includes(input.intimacy) ? input.intimacy : "",
-    idealIntimacy: cleanList(input.idealIntimacy, allowedIntimacy),
-    intimacyTiming: allowedIntimacyTiming.includes(input.intimacyTiming) ? input.intimacyTiming : "",
-    idealIntimacyTiming: cleanList(input.idealIntimacyTiming, allowedIntimacyTiming),
+    intimacy: currentIntimacyOptions.includes(input.intimacy) ? input.intimacy : "",
+    idealIntimacy: cleanList(input.idealIntimacy, currentIntimacyOptions),
+    intimacyTiming: currentIntimacyTimingOptions.includes(input.intimacyTiming) ? input.intimacyTiming : "",
+    idealIntimacyTiming: cleanList(input.idealIntimacyTiming, currentIntimacyTimingOptions),
     weekend: cleanList(input.weekend || input.selfWeekends, allowedWeekend),
     values: cleanList(input.values || input.selfValues, allowedValues),
     selfWeekends: cleanList(input.selfWeekends || input.weekend, allowedWeekend),
@@ -560,6 +570,10 @@ function validateProfile(profile) {
   if ((!Array.isArray(profile.location) || profile.location.length === 0) && !profile.city) missing.push("所在校区");
   if (!profile.intent) missing.push("匹配期待");
   if (!profile.tempo) missing.push("沟通节奏");
+  if (!hasCurrentOption(profile.intimacy, currentIntimacyOptions)) missing.push("恋爱接受程度");
+  if (!hasCurrentOptionList(profile.idealIntimacy, currentIntimacyOptions)) missing.push("希望对方的边界");
+  if (!hasCurrentOption(profile.intimacyTiming, currentIntimacyTimingOptions)) missing.push("对亲密关系态度");
+  if (!hasCurrentOptionList(profile.idealIntimacyTiming, currentIntimacyTimingOptions)) missing.push("可接受发生时间");
   if (!Number.isInteger(profile.selfMetrics?.marriage)) missing.push("我的婚姻意向");
   if (!Number.isInteger(profile.idealMetrics?.marriage)) missing.push("期待对方的婚姻意向");
   if (!Number.isInteger(profile.selfMetrics?.fertility)) missing.push("我的生育意向");
@@ -1146,7 +1160,7 @@ function bestMatchesFor(profile, profiles) {
 }
 
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
-  const pool = profiles.filter(profile => profile.consent);
+  const pool = profiles.filter(profile => profile.consent && validateProfile(profile).length === 0);
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
   const activePool = [...pool].sort((a, b) => {
@@ -1352,10 +1366,10 @@ function demoProfile(overrides) {
     idealIntent: overrides.idealIntent || ["认真发展", "慢慢了解", overrides.intent].filter(Boolean),
     tempo: overrides.tempo,
     idealTempo: overrides.idealTempo || ["高频交流", "日常分享", "线下优先"],
-    intimacy: overrides.intimacy || "自然走进",
-    idealIntimacy: overrides.idealIntimacy || ["自然走进", "先定关系"],
-    intimacyTiming: overrides.intimacyTiming || "有稳定好感后",
-    idealIntimacyTiming: overrides.idealIntimacyTiming || ["有稳定好感后", "相熟一到三个月后", "顺其自然"],
+    intimacy: overrides.intimacy || "关系决定",
+    idealIntimacy: overrides.idealIntimacy || ["开放态度", "关系决定"],
+    intimacyTiming: overrides.intimacyTiming || "关系稳定后",
+    idealIntimacyTiming: overrides.idealIntimacyTiming || ["婚后", "关系稳定后", "相熟数月后"],
     weekend: overrides.selfWeekends,
     values: overrides.selfValues,
     selfWeekends: overrides.selfWeekends,
@@ -1391,12 +1405,14 @@ function seedDemoProfiles(data) {
   const roundId = currentRound(new Date(), data.settings).id;
   const demos = [
     demoProfile({ id: "demo-lina", roundId, displayName: "林夏", email: "2400000001@stu.pku.edu.cn", birthYear: 2002, gender: "女", seeking: ["男"], identity: "本科生", location: ["燕园"], hometownProvince: "北京", discipline: "人文", intent: "认真发展", tempo: "日常分享", selfWeekends: ["散步游览", "自习工作"], selfValues: ["坦诚表达", "情绪稳定"], selfStyle: ["学院", "清冷"], height: 165, idealHeight: 178, contactValue: "demo_linxia" }),
-    demoProfile({ id: "demo-qinghe", roundId, displayName: "清和", email: "2400000002@stu.pku.edu.cn", birthYear: 2001, gender: "女", seeking: ["男"], identity: "硕士生", location: ["万柳", "燕园"], hometownProvince: "江苏", discipline: "社科", intent: "慢慢了解", tempo: "高频交流", selfWeekends: ["外出旅行", "散步游览"], selfValues: ["共同成长", "保持好奇"], selfStyle: ["随性", "学院"], height: 168, idealHeight: 179, contactValue: "demo_qinghe" }),
-    demoProfile({ id: "demo-yunting", roundId, displayName: "云亭", email: "2400000003@stu.pku.edu.cn", birthYear: 2000, gender: "女", seeking: ["男"], identity: "博士生", location: ["学院路"], hometownProvince: "浙江", discipline: "理学", intent: "认真发展", tempo: "低频稳定", selfWeekends: ["自习工作", "做饭探店"], selfValues: ["生活有序", "边界清晰"], selfStyle: ["正式", "清冷"], height: 162, idealHeight: 176, contactValue: "demo_yunting" }),
-    demoProfile({ id: "demo-mingyuan", roundId, displayName: "明远", email: "2400000004@pku.edu.cn", birthYear: 1999, gender: "男", seeking: ["女"], identity: "硕士生", location: ["燕园"], hometownProvince: "河北", discipline: "工学", intent: "认真发展", tempo: "日常分享", selfWeekends: ["运动户外", "散步游览"], selfValues: ["坦诚表达", "共同成长"], selfStyle: ["学院", "运动"], height: 180, idealHeight: 166, contactValue: "demo_mingyuan" }),
-    demoProfile({ id: "demo-zichen", roundId, displayName: "子辰", email: "2400000005@pku.edu.cn", birthYear: 2001, gender: "男", seeking: ["女"], identity: "本科生", location: ["万柳"], hometownProvince: "广东", discipline: "经管", intent: "慢慢了解", tempo: "高频交流", selfWeekends: ["外出旅行", "朋友聚会"], selfValues: ["保持好奇", "情绪稳定"], selfStyle: ["随性", "正式"], height: 176, idealHeight: 168, contactValue: "demo_zichen" }),
-    demoProfile({ id: "demo-huaiyu", roundId, displayName: "怀玉", email: "2400000006@stu.pku.edu.cn", birthYear: 1998, gender: "男", seeking: ["女"], identity: "博士生", location: ["学院路", "燕园"], hometownProvince: "辽宁", discipline: "理学", intent: "快速转进", tempo: "低频稳定", selfWeekends: ["自习工作", "做饭探店"], selfValues: ["生活有序", "边界清晰"], selfStyle: ["正式", "中式"], height: 179, idealHeight: 165, contactValue: "demo_huaiyu" })
+    demoProfile({ id: "demo-mingyuan", roundId, displayName: "明远", email: "2400000002@pku.edu.cn", birthYear: 1999, gender: "男", seeking: ["女"], identity: "硕士生", location: ["燕园"], hometownProvince: "河北", discipline: "工学", intent: "认真发展", tempo: "日常分享", selfWeekends: ["运动户外", "散步游览"], selfValues: ["坦诚表达", "共同成长"], selfStyle: ["学院", "运动"], height: 180, idealHeight: 166, contactValue: "demo_mingyuan" })
   ];
+  const demoIds = new Set(demos.map(profile => profile.id));
+  const staleDemoIds = new Set(data.profiles.filter(profile => profile.isDemo && !demoIds.has(profile.id)).map(profile => profile.id));
+  data.profiles = data.profiles.filter(profile => !profile.isDemo || demoIds.has(profile.id));
+  if (staleDemoIds.size) {
+    data.matches = data.matches.filter(match => !staleDemoIds.has(match.leftId) && !staleDemoIds.has(match.rightId));
+  }
   const existing = new Map(data.profiles.map(profile => [profile.id, profile]));
   let added = 0;
   let updated = 0;
@@ -1410,6 +1426,38 @@ function seedDemoProfiles(data) {
     }
   }
   return { added, updated, totalDemo: demos.length };
+}
+
+function deleteDemoProfiles(data) {
+  const demoIds = new Set(data.profiles.filter(profile => profile.isDemo).map(profile => profile.id));
+  const demoEmails = new Set(data.profiles.filter(profile => profile.isDemo).map(profile => profile.email));
+  const beforeProfiles = data.profiles.length;
+  const beforeMatches = data.matches.length;
+  data.profiles = data.profiles.filter(profile => !profile.isDemo);
+  data.users = data.users.filter(user => !demoEmails.has(user.email));
+  data.userSessions = data.userSessions.filter(session => !demoEmails.has(session.email));
+  data.verifications = data.verifications.filter(record => !demoEmails.has(record.email));
+  data.matches = data.matches.filter(match => !demoIds.has(match.leftId) && !demoIds.has(match.rightId));
+  return {
+    profilesDeleted: beforeProfiles - data.profiles.length,
+    matchesDeleted: beforeMatches - data.matches.length
+  };
+}
+
+function deleteAccountForUser(data, user) {
+  const profile = data.profiles.find(item => item.email === user.email);
+  const beforeMatches = data.matches.length;
+  data.users = data.users.filter(item => item.email !== user.email);
+  data.profiles = data.profiles.filter(item => item.email !== user.email);
+  data.verifications = data.verifications.filter(item => item.email !== user.email);
+  data.userSessions = data.userSessions.filter(item => item.email !== user.email);
+  if (profile) {
+    data.matches = data.matches.filter(match => match.leftId !== profile.id && match.rightId !== profile.id);
+  }
+  return {
+    profileDeleted: Boolean(profile),
+    matchesDeleted: beforeMatches - data.matches.length
+  };
 }
 
 function adminProfile(profile, context = {}) {
@@ -1548,6 +1596,15 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { user: user ? { email: user.email, verifiedAt: user.verifiedAt } : null });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/auth/delete-account") {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const user = getUserBySession(data, body.authToken);
+    if (!user) return sendJson(res, 401, { error: "请先登录后再注销账户。" });
+    const result = deleteAccountForUser(data, user);
+    await writeJson(DATA_FILE, data);
+    return sendJson(res, 200, { ok: true, ...result });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/admin/login") {
     const body = JSON.parse(await readBody(req) || "{}");
     if (normalizeEmail(body.email) !== ADMIN_EMAIL || body.password !== ADMIN_PASSWORD) {
@@ -1619,6 +1676,12 @@ async function handleApi(req, res, url) {
       const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
       return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
     }
+    if (req.method === "POST" && url.pathname === "/api/admin/demo-users/delete") {
+      const result = deleteDemoProfiles(data);
+      await writeJson(DATA_FILE, data);
+      const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+      return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
+    }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/update") {
       const body = adminBody;
       const match = data.matches.find(item => item.id === body.matchId);
@@ -1634,7 +1697,7 @@ async function handleApi(req, res, url) {
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
       const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.id !== match.id), data.settings) : null;
-      if (preview?.hardBlocked) {
+      if (preview?.hardBlocked && match.status !== "held") {
         return sendJson(res, 400, { error: "该组合存在硬性不符合项，不能保存为候选匹配。", warnings: preview.boundaryWarnings });
       }
       if (preview) {

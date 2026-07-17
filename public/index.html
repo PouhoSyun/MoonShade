@@ -14,7 +14,7 @@
         <span>
           <strong>MoonShade</strong>
           <small>月影</small>
-          <small class="app-version">version 1.2.0</small>
+          <small class="app-version">version 1.3.0</small>
         </span>
       </a>
       <nav>
@@ -78,6 +78,7 @@
               <a href="#dashboard" data-nav="dashboard">查看状态</a>
               <a href="#results" data-nav="results">查看结果</a>
               <button type="button" data-logout>退出登录</button>
+              <button type="button" data-delete-account>永久注销账户</button>
             </div>
           </section>
         </aside>
@@ -92,7 +93,7 @@
           </div>
           <div class="round-card">
             <strong>匹配节奏</strong>
-            <span data-match-frequency>原则上每 3 天一次</span>
+            <span data-match-frequency>原则上每 5 天一次</span>
             <em>随画像分布浮动</em>
           </div>
           <div class="round-card">
@@ -110,18 +111,18 @@
               <span data-close-time>下次匹配参考时间加载中</span>
               <span data-result-time>发布状态加载中</span>
             </div>
-            <p class="status-note" data-match-note>原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
+            <p class="status-note" data-match-note>原则上每五天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
           </section>
 
           <section class="panel half rhythm-panel">
             <h3>本轮节奏</h3>
-            <p>系统会先看双方边界是否互相允许，再计算关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度。</p>
+            <p>系统会先看双方性别年龄是否匹配，再计算关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度。</p>
             <button class="secondary-action" data-nav="survey">填写 / 更新问卷</button>
           </section>
 
           <section class="panel half balance-panel">
             <h3>影响匹配的因素</h3>
-            <p data-balance-note>同类画像越多，越容易稳定匹配；性别比例失衡、偏好过宽或过窄时，匹配频率和结果都会出现变化。</p>
+            <p data-balance-note>同类画像越少，偏好越清晰，越容易稳定匹配。当您的偏好过宽或过窄时，匹配频率和结果都会出现变化。</p>
             <button class="secondary-action" data-nav="results">查看匹配结果</button>
           </section>
 
@@ -177,7 +178,7 @@
             </div>
             <label class="consent">
               <input type="checkbox" name="consent" />
-              <span>我确认以上信息用于 MoonShade 本轮匹配，并理解联系方式会展示给高分匹配对象。</span>
+              <span>我确认以上信息用于 MoonShade 本轮匹配，并理解联系方式会展示给匹配对象。由于用户池有限，可能匹配到不完全满足条件的对象。</span>
             </label>
           </section>
 
@@ -194,7 +195,7 @@
         <section class="panel result-intro status-panel">
           <p class="eyebrow">本轮结果</p>
           <h2>匹配结果</h2>
-          <p>管理员发布后，你会在这里看到本轮匹配。系统先严格检查双方性别边界，再按关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度排序。</p>
+          <p>系统匹配发布后，你将在这里看到最近两次的匹配结果。我们严格检查性别和年龄要求，再按画像接近程度排序。</p>
           <button class="secondary-action" data-refresh-results>刷新结果</button>
         </section>
         <div class="match-list" data-match-list></div>

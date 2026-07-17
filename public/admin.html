@@ -38,61 +38,77 @@
           <div class="admin-actions">
             <button class="secondary-action" data-refresh-admin>刷新</button>
             <button class="secondary-action" data-seed-demo-users>生成测试用户</button>
+            <button class="secondary-action danger-action" data-delete-demo-users>删除测试用户</button>
+            <button class="secondary-action" data-admin-view="dashboard">候选工作台</button>
+            <button class="secondary-action" data-admin-view="published">已发布匹配</button>
             <button class="secondary-action" type="button" data-admin-logout>退出登录</button>
             <button class="primary-action publish-action" data-publish-matches>发布已审核匹配</button>
           </div>
         </header>
 
-        <section class="admin-overview">
-          <section class="panel admin-settings-panel">
-            <p class="eyebrow">Match Settings</p>
-            <h2>匹配轮次</h2>
-            <label>匹配间隔
-              <select data-match-interval>
-                <option value="1">每 1 天</option>
-                <option value="2">每 2 天</option>
-                <option value="3">每 3 天</option>
-                <option value="5">每 5 天</option>
-                <option value="7">每 7 天</option>
-                <option value="14">每 14 天</option>
-              </select>
-            </label>
-            <label>状态页说明
-              <textarea data-match-note-input rows="3"></textarea>
-            </label>
-            <button class="secondary-action" data-save-settings>保存设置</button>
-            <p class="form-message" data-settings-message></p>
+        <div data-admin-dashboard>
+          <section class="admin-overview">
+            <section class="panel admin-settings-panel">
+              <p class="eyebrow">Match Settings</p>
+              <h2>匹配轮次</h2>
+              <label>匹配间隔
+                <select data-match-interval>
+                  <option value="1">每 1 天</option>
+                  <option value="2">每 2 天</option>
+                  <option value="3">每 3 天</option>
+                  <option value="5">每 5 天</option>
+                  <option value="7">每 7 天</option>
+                  <option value="14">每 14 天</option>
+                </select>
+              </label>
+              <label>状态页说明
+                <textarea data-match-note-input rows="3"></textarea>
+              </label>
+              <button class="secondary-action" data-save-settings>保存设置</button>
+              <p class="form-message" data-settings-message></p>
+            </section>
+
+            <section class="panel admin-stat-panel">
+              <p class="eyebrow">Current Round</p>
+              <h2 data-admin-round-title>本轮</h2>
+              <div class="admin-metrics">
+                <span><strong data-admin-profile-count>0</strong><small>份问卷</small></span>
+                <span><strong data-admin-match-count>0</strong><small>候选</small></span>
+                <span><strong data-admin-interval>3</strong><small>天/轮</small></span>
+              </div>
+              <p data-admin-round-note>加载中</p>
+            </section>
           </section>
 
-          <section class="panel admin-stat-panel">
-            <p class="eyebrow">Current Round</p>
-            <h2 data-admin-round-title>本轮</h2>
-            <div class="admin-metrics">
-              <span><strong data-admin-profile-count>0</strong><small>份问卷</small></span>
-              <span><strong data-admin-match-count>0</strong><small>组匹配</small></span>
-              <span><strong data-admin-interval>3</strong><small>天/轮</small></span>
-            </div>
-            <p data-admin-round-note>加载中</p>
-          </section>
-        </section>
+          <section class="admin-data-grid">
+            <section class="panel">
+              <h2>已提交问卷</h2>
+              <div class="admin-table-wrap">
+                <table class="admin-table" data-profile-table></table>
+              </div>
+            </section>
 
-        <section class="admin-data-grid">
+            <section class="panel profile-detail-panel">
+              <h2>问卷详情</h2>
+              <div data-profile-detail class="profile-detail"></div>
+            </section>
+          </section>
+
           <section class="panel">
-            <h2>已提交问卷</h2>
-            <div class="admin-table-wrap">
-              <table class="admin-table" data-profile-table></table>
+            <h2>每日候选匹配</h2>
+            <div class="match-editor" data-match-editor></div>
+          </section>
+        </div>
+
+        <section class="panel admin-published-page" data-published-page hidden>
+          <div class="section-head compact-section-head">
+            <div>
+              <p class="eyebrow">Published</p>
+              <h2>已发布匹配</h2>
             </div>
-          </section>
-
-          <section class="panel profile-detail-panel">
-            <h2>问卷详情</h2>
-            <div data-profile-detail class="profile-detail"></div>
-          </section>
-        </section>
-
-        <section class="panel">
-          <h2>每日候选匹配</h2>
-          <div class="match-editor" data-match-editor></div>
+            <button class="secondary-action" data-admin-view="dashboard">返回候选工作台</button>
+          </div>
+          <div class="match-editor published-match-list" data-published-match-list></div>
         </section>
       </section>
     </main>

@@ -8,7 +8,8 @@ const state = {
   matches: [],
   settings: null,
   round: null,
-  selectedProfileId: ""
+  selectedProfileId: "",
+  view: "dashboard"
 };
 
 const $ = selector => document.querySelector(selector);
@@ -56,7 +57,7 @@ function detailBlock(title, items) {
 }
 
 function statusLabel(status) {
-  return ({ draft: "待审核", published: "已发布", held: "暂缓" })[status] || status;
+  return ({ draft: "推送", published: "已推送", held: "暂缓" })[status] || status;
 }
 
 function formatDateTime(value) {
@@ -86,6 +87,19 @@ function frequencyText(frequency) {
   return `${frequency.label} · 个人权重 ${frequency.personalWeight ?? frequency.priority ?? 0} · ${gap}`;
 }
 
+function studentIdFromEmail(email) {
+  return String(email || "").match(/^(\d{10})@/)?.[1] || "-";
+}
+
+function personalWeightValue(frequency) {
+  return frequency?.personalWeight ?? frequency?.priority ?? 0;
+}
+
+function lastMatchText(frequency) {
+  if (!frequency || frequency.daysSinceLastMatch === null || frequency.daysSinceLastMatch === undefined) return "暂无";
+  return `${frequency.daysSinceLastMatch}天前`;
+}
+
 function weightText(frequency) {
   if (!frequency) return "时间 0 / 画像 0 / 个人 0";
   const clarityPercent = Number.isFinite(Number(frequency.clarityRatio)) ? Math.round(Number(frequency.clarityRatio) * 100) : 0;
@@ -94,14 +108,17 @@ function weightText(frequency) {
 
 function renderBoundaryWarnings(warnings = []) {
   if (!warnings.length) return `<div class="match-boundary-ok">所有可接受范围未发现不符合项</div>`;
+  const visible = warnings.slice(0, 2);
+  const rest = warnings.length - visible.length;
   return `
     <div class="match-boundary-warnings">
-      ${warnings.map(item => `
+      ${visible.map(item => `
         <span>
           <strong>${escapeHtml(item.strict ? "严格" : "软性")}</strong>
           ${escapeHtml(item.label)}：${escapeHtml(item.message)}
         </span>
       `).join("")}
+      ${rest > 0 ? `<span>另有 ${rest} 项不符合，进入详情可逐项核对。</span>` : ""}
     </div>
   `;
 }
@@ -256,9 +273,26 @@ async function loadAdmin() {
   $("[data-admin-login]").hidden = true;
   $("[data-admin-console]").hidden = false;
   renderSettings();
+  renderAdminView();
+}
+
+function candidateMatches() {
+  return state.matches.filter(match => match.status !== "published");
+}
+
+function publishedMatches() {
+  return state.matches.filter(match => match.status === "published");
+}
+
+function renderAdminView() {
+  const dashboard = $("[data-admin-dashboard]");
+  const publishedPage = $("[data-published-page]");
+  if (dashboard) dashboard.hidden = state.view !== "dashboard";
+  if (publishedPage) publishedPage.hidden = state.view !== "published";
   renderProfiles();
   renderProfileDetail();
   renderMatches();
+  renderPublishedMatches();
 }
 
 function renderSettings() {
@@ -267,32 +301,25 @@ function renderSettings() {
   $("[data-match-note-input]").value = state.settings.matchWindowNote || "";
   $("[data-admin-round-title]").textContent = state.round?.id || "本轮";
   $("[data-admin-profile-count]").textContent = String(state.profiles.length);
-  $("[data-admin-match-count]").textContent = String(state.matches.length);
+  $("[data-admin-match-count]").textContent = String(candidateMatches().length);
   $("[data-admin-interval]").textContent = String(state.settings.matchIntervalDays || 3);
   $("[data-admin-round-note]").textContent = state.round
-    ? `${state.round.label}，候选匹配会按每日权重自动刷新，管理员审核后发布给用户。`
+    ? `${state.round.label}。每日按个人权重与交叉权重刷新候选，管理员选择推送或暂缓。`
     : "轮次信息加载中。";
 }
 
 function renderProfiles() {
   const table = $("[data-profile-table]");
   table.innerHTML = `
-    <thead><tr><th>查看</th><th>邮箱</th><th>展示名</th><th>性别</th><th>个人权重</th><th>上次成功</th><th>预计下次</th><th>身份</th><th>校区</th><th>方向</th><th>期待</th><th>更新时间</th></tr></thead>
+    <thead><tr><th>学号</th><th>展示名</th><th>个人权重</th><th>上次匹配</th><th>身份</th></tr></thead>
     <tbody>
       ${state.profiles.map(profile => `
-        <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}">
-          <td><button class="table-action" type="button" data-view-profile="${escapeHtml(profile.id)}">查看</button></td>
-          <td>${escapeHtml(profile.email)}</td>
+        <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}" data-view-profile="${escapeHtml(profile.id)}">
+          <td>${escapeHtml(studentIdFromEmail(profile.email))}</td>
           <td>${escapeHtml(profile.displayName)}</td>
-          <td>${escapeHtml(profile.gender)}</td>
-          <td><span class="frequency-badge">${escapeHtml(frequencyText(profile.matchFrequency))}</span></td>
-          <td>${escapeHtml(formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt))}</td>
-          <td>${escapeHtml(scheduleText(profile.matchFrequency))}</td>
+          <td><span class="frequency-badge">${escapeHtml(personalWeightValue(profile.matchFrequency))}</span></td>
+          <td>${escapeHtml(lastMatchText(profile.matchFrequency))}</td>
           <td>${escapeHtml(profile.identity)}</td>
-          <td>${escapeHtml(formatValue(profile.location))}</td>
-          <td>${escapeHtml(profile.discipline)}</td>
-          <td>${escapeHtml(profile.intent)}</td>
-          <td>${escapeHtml(profile.updatedAt ? new Date(profile.updatedAt).toLocaleString("zh-CN") : "")}</td>
         </tr>
       `).join("")}
     </tbody>
@@ -439,14 +466,16 @@ function compatibleProfileOptions(selectedId, counterpartId) {
 }
 
 function renderMatchDiagnostics(match) {
+  const reasons = (match.reasons || []).slice(0, 3);
+  const hiddenReasonCount = Math.max(0, (match.reasons || []).length - reasons.length);
   return `
-    <div data-match-diagnostics>
-      <p>${(match.reasons || []).map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
+    <div class="match-diagnostics" data-match-diagnostics>
+      <p>${reasons.map(reason => `· ${escapeHtml(reason)}`).join("<br>")}${hiddenReasonCount ? `<br>· 另有 ${hiddenReasonCount} 条参考依据` : ""}</p>
       ${renderBoundaryWarnings(match.boundaryWarnings)}
       <div class="match-frequency-notes">
-        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(weightText(match.left.matchFrequency))}</span>` : ""}
-        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(weightText(match.right.matchFrequency))}</span>` : ""}
-        <span>交叉相似权重：${escapeHtml(match.crossWeight ?? match.score)}</span>
+        ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：个人 ${escapeHtml(personalWeightValue(match.left.matchFrequency))}</span>` : ""}
+        ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：个人 ${escapeHtml(personalWeightValue(match.right.matchFrequency))}</span>` : ""}
+        <span>交叉 ${escapeHtml(match.crossWeight ?? match.score)}</span>
         ${match.rawScore !== undefined ? `<span>原始相似分：${escapeHtml(match.rawScore)} / ${escapeHtml(match.maxScore || 240)}</span>` : ""}
         ${match.weightBreakdown ? `<span>重复降权：${escapeHtml(match.weightBreakdown.repeatPenalty || 0)}</span>` : ""}
       </div>
@@ -492,11 +521,12 @@ async function previewMatch(card) {
 
 function renderMatches() {
   const editor = $("[data-match-editor]");
-  if (!state.matches.length) {
+  const matches = candidateMatches();
+  if (!matches.length) {
     editor.innerHTML = `<p class="empty-state">今天还没有可用候选匹配。人数不足或性别/偏好边界不兼容时可能为空。</p>`;
     return;
   }
-  editor.innerHTML = state.matches.map(match => `
+  editor.innerHTML = matches.map(match => `
     <article class="admin-match" data-match-id="${match.id}">
       <div class="match-admin-head">
         <strong>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)}</strong>
@@ -512,7 +542,42 @@ function renderMatches() {
       </label>
       <label>状态
         <select data-status>
-          ${["draft", "published", "held"].map(status => `<option value="${status}" ${match.status === status ? "selected" : ""}>${statusLabel(status)}</option>`).join("")}
+          ${["draft", "held"].map(status => `<option value="${status}" ${match.status === status ? "selected" : ""}>${statusLabel(status)}</option>`).join("")}
+        </select>
+      </label>
+      <label>备注
+        <textarea data-notes rows="2">${escapeHtml(match.notes || "")}</textarea>
+      </label>
+      ${renderMatchDiagnostics(match)}
+      <button class="secondary-action" data-save-match>保存调整</button>
+    </article>
+  `).join("");
+}
+
+function renderPublishedMatches() {
+  const target = $("[data-published-match-list]");
+  if (!target) return;
+  const matches = publishedMatches();
+  if (!matches.length) {
+    target.innerHTML = `<p class="empty-state">还没有已发布匹配。</p>`;
+    return;
+  }
+  target.innerHTML = matches.map(match => `
+    <article class="admin-match published-match" data-match-id="${match.id}">
+      <div class="match-admin-head">
+        <strong>${escapeHtml(match.left?.displayName || "Moon")} × ${escapeHtml(match.right?.displayName || "Shade")}</strong>
+        <small>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)} · 交叉 ${escapeHtml(match.crossWeight ?? match.score)} · ${escapeHtml(formatDateTime(match.publishedAt || match.updatedAt))}</small>
+        <span>${escapeHtml(statusLabel(match.status))}</span>
+      </div>
+      <label>Moon
+        <select data-left-id>${compatibleProfileOptions(match.leftId, match.rightId)}</select>
+      </label>
+      <label>Shade
+        <select data-right-id>${compatibleProfileOptions(match.rightId, match.leftId)}</select>
+      </label>
+      <label>状态
+        <select data-status>
+          ${["published", "held"].map(status => `<option value="${status}" ${match.status === status ? "selected" : ""}>${status === "published" ? "推送" : statusLabel(status)}</option>`).join("")}
         </select>
       </label>
       <label>备注
@@ -531,6 +596,12 @@ async function publishMatches() {
 
 async function seedDemoUsers() {
   await api("/api/admin/demo-users", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
+  await loadAdmin();
+}
+
+async function deleteDemoUsers() {
+  if (!confirm("确定删除所有测试用户及其相关匹配记录吗？")) return;
+  await api("/api/admin/demo-users/delete", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
   await loadAdmin();
 }
 
@@ -558,6 +629,7 @@ async function saveSettings() {
 }
 
 async function saveMatch(card) {
+  const nextStatus = card.querySelector("[data-status]").value;
   await api("/api/admin/matches/update", {
     method: "POST",
     body: JSON.stringify({
@@ -565,10 +637,11 @@ async function saveMatch(card) {
       matchId: card.dataset.matchId,
       leftId: card.querySelector("[data-left-id]").value,
       rightId: card.querySelector("[data-right-id]").value,
-      status: card.querySelector("[data-status]").value,
+      status: nextStatus,
       notes: card.querySelector("[data-notes]").value
     })
   });
+  if (nextStatus === "held") state.view = "dashboard";
   await loadAdmin();
 }
 
@@ -579,8 +652,15 @@ $("[data-admin-logout]").addEventListener("click", logout);
 $("[data-refresh-admin]").addEventListener("click", loadAdmin);
 $("[data-publish-matches]").addEventListener("click", publishMatches);
 $("[data-seed-demo-users]").addEventListener("click", seedDemoUsers);
+$("[data-delete-demo-users]").addEventListener("click", deleteDemoUsers);
 $("[data-save-settings]").addEventListener("click", saveSettings);
 document.addEventListener("click", event => {
+  const viewButton = event.target.closest("[data-admin-view]");
+  if (viewButton) {
+    state.view = viewButton.dataset.adminView;
+    renderAdminView();
+    return;
+  }
   const profileButton = event.target.closest("[data-view-profile]");
   if (profileButton) {
     state.selectedProfileId = profileButton.dataset.viewProfile;

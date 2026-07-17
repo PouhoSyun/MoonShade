@@ -15,8 +15,8 @@ const optionSets = {
   disciplines: ["理学", "工学", "人文", "社科", "医学", "经管", "艺术体育", "其他"],
   intents: ["快速转进", "认真发展", "先交朋友", "慢慢了解"],
   tempos: ["高频交流", "日常分享", "低频稳定", "线下优先"],
-  intimacy: ["一见钟情", "自然走进", "先定关系", "保守踏实"],
-  intimacyTiming: ["不接受", "婚后", "有稳定好感后", "相熟一到三个月后", "顺其自然"],
+  intimacy: ["开放态度", "关系决定", "暂无打算", "柏拉图式"],
+  intimacyTiming: ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"],
   weekends: ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"],
   values: ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"],
   styles: ["清冷", "学院", "运动", "中式", "正式", "随性"],
@@ -48,7 +48,7 @@ const pages = [
     short: "基本信息",
     desc: "左栏选择可匹配的人群范围，右栏可多选划定可以接受的范围。",
     pairs: [
-      [{ type: "input", name: "displayName", label: "展示名", placeholder: "例如：月影同学" }, null],
+      [{ type: "input", name: "displayName", label: "展示名", placeholder: "例如：月影" }, null],
       [{ type: "chips", name: "gender", label: "我的性别", options: optionSets.genders }, { type: "chips", multi: true, name: "seeking", label: "希望认识的性别", options: optionSets.seeking }],
       [{ type: "select", name: "birthYear", label: "出生年", options: optionSets.years }, { type: "yearRange", name: "idealBirthYear", label: "可接受出生年区间", options: optionSets.years }],
       [{ type: "chips", name: "identity", label: "目前身份", options: optionSets.identities }, { type: "chips", multi: true, name: "idealIdentities", label: "可接受身份", options: optionSets.identities }],
@@ -62,12 +62,12 @@ const pages = [
   {
     title: "第二卷：相处节奏",
     short: "相处节奏",
-    desc: "左栏选择自己更符合的描述，右栏选择期待对方更靠近哪一侧。已提交过问卷的用户请补充婚姻和生育意向。",
+    desc: "左栏选择自己更符合的描述，右栏选择期待对方更靠近哪一侧。已提交过问卷的用户请补充更新后的亲密关系、婚姻和生育意向。",
     pairs: [
       [{ type: "chips", name: "intent", label: "这次更期待", options: optionSets.intents }, { type: "chips", multi: true, name: "idealIntent", label: "希望对方的期待", options: optionSets.intents }],
       [{ type: "chips", name: "tempo", label: "舒服的沟通节奏", options: optionSets.tempos }, { type: "chips", multi: true, name: "idealTempo", label: "可接受沟通节奏", options: optionSets.tempos }],
-      [{ type: "chips", name: "intimacy", label: "对亲密关系的接受程度", options: optionSets.intimacy }, { type: "chips", multi: true, name: "idealIntimacy", label: "希望对方的边界", options: optionSets.intimacy }],
-      [{ type: "chips", name: "intimacyTiming", label: "亲密关系发生时间", options: optionSets.intimacyTiming }, { type: "chips", multi: true, name: "idealIntimacyTiming", label: "可接受发生时间", options: optionSets.intimacyTiming }],
+      [{ type: "chips", name: "intimacy", label: "恋爱接受程度", options: optionSets.intimacy }, { type: "chips", multi: true, name: "idealIntimacy", label: "希望对方的边界", options: optionSets.intimacy }],
+      [{ type: "chips", name: "intimacyTiming", label: "对亲密关系态度", options: optionSets.intimacyTiming }, { type: "chips", multi: true, name: "idealIntimacyTiming", label: "可接受发生时间", options: optionSets.intimacyTiming }],
       [{ type: "mbtiSliders", name: "mbtiMetrics", label: "MBTI 四维倾向" }, { type: "mbtiSliders", name: "idealMbtiMetrics", label: "希望对方的 MBTI 倾向" }],
       ...scaleQuestions.map(item => [
         { ...item, type: "scale", name: `selfMetrics.${item.key}` },
@@ -616,17 +616,43 @@ function collectForm() {
   return { ...formData, ...state.selected, authToken: state.authToken, token: state.token, consent: form.elements.consent.checked };
 }
 
+function valueInOptions(value, options) {
+  return options.includes(value);
+}
+
+function listInOptions(value, options) {
+  return Array.isArray(value) && value.length > 0 && value.every(item => options.includes(item));
+}
+
+function intimacyAnswersCurrent(source) {
+  return valueInOptions(source?.intimacy, optionSets.intimacy)
+    && listInOptions(source?.idealIntimacy, optionSets.intimacy)
+    && valueInOptions(source?.intimacyTiming, optionSets.intimacyTiming)
+    && listInOptions(source?.idealIntimacyTiming, optionSets.intimacyTiming);
+}
+
 function needsSurveySupplement(profile) {
-  return !Number.isInteger(profile?.selfMetrics?.marriage)
+  return !intimacyAnswersCurrent(profile)
+    || !Number.isInteger(profile?.selfMetrics?.marriage)
     || !Number.isInteger(profile?.idealMetrics?.marriage)
     || !Number.isInteger(profile?.selfMetrics?.fertility)
     || !Number.isInteger(profile?.idealMetrics?.fertility);
+}
+
+function cleanProfileFieldValue(key, value) {
+  if (key === "intimacy") return valueInOptions(value, optionSets.intimacy) ? value : "";
+  if (key === "idealIntimacy") return Array.isArray(value) ? value.filter(item => optionSets.intimacy.includes(item)) : [];
+  if (key === "intimacyTiming") return valueInOptions(value, optionSets.intimacyTiming) ? value : "";
+  if (key === "idealIntimacyTiming") return Array.isArray(value) ? value.filter(item => optionSets.intimacyTiming.includes(item)) : [];
+  return value;
 }
 
 function fillForm(profile) {
   if (!profile) return;
   state.profile = profile;
   state.selected = {};
+  const supplementNeeded = needsSurveySupplement(profile);
+  if (supplementNeeded && state.pageIndex === 0) state.pageIndex = 1;
   [
     "displayName", "gender", "birthYear", "identity", "schoolType", "location", "discipline", "seeking",
     "idealBirthYearMin", "idealBirthYearMax", "idealIdentities", "idealLocations", "hometownProvince", "idealHometownRegions",
@@ -635,16 +661,22 @@ function fillForm(profile) {
     "mbti", "mbtiMetrics", "idealMbtiMetrics", "selfMetrics", "idealMetrics", "selfWeekends", "idealWeekends", "selfValues", "idealValues",
     "selfStyle", "idealStyle", "height", "idealHeight", "appearanceFeel", "idealAppearanceFeel", "hair", "idealHair", "glasses", "idealGlasses"
   ].forEach(key => {
-    if (profile[key] !== undefined && profile[key] !== null) setByPath(state.selected, key, profile[key]);
+    if (profile[key] !== undefined && profile[key] !== null) setByPath(state.selected, key, cleanProfileFieldValue(key, profile[key]));
   });
   const form = $("[data-survey-form]");
   ["contactType", "contactValue", "selfIntro"].forEach(name => {
     if (form.elements[name]) form.elements[name].value = profile[name] || "";
   });
   form.elements.consent.checked = profile.consent === true;
-  $("[data-submit-state]").textContent = needsSurveySupplement(profile)
+  $("[data-submit-state]").textContent = supplementNeeded
     ? "问卷有新增题目待补充"
     : "本轮问卷已提交";
+  const message = $("[data-form-message]");
+  if (message) {
+    message.textContent = supplementNeeded
+      ? "亲密关系题目已更新，请在第二卷补充这两题后重新提交。其他已填写内容已为你保留。"
+      : "";
+  }
   renderSurveyPage();
 }
 
@@ -720,6 +752,26 @@ function bindAuth() {
       localStorage.removeItem(tokenKey);
       localStorage.removeItem("moonshade.adminToken");
       window.location.reload();
+    });
+  }
+  const deleteButton = $("[data-delete-account]");
+  if (deleteButton) {
+    deleteButton.addEventListener("click", async () => {
+      if (!state.authToken) return;
+      const confirmed = confirm("永久注销账户将删除账号、问卷和匹配记录，无法恢复。确定继续吗？");
+      if (!confirmed) return;
+      deleteButton.disabled = true;
+      try {
+        await api("/api/auth/delete-account", { method: "POST", body: JSON.stringify({ authToken: state.authToken }) });
+        localStorage.removeItem(authKey);
+        localStorage.removeItem(tokenKey);
+        localStorage.removeItem("moonshade.adminToken");
+        window.location.replace("/");
+      } catch (error) {
+        appendAuthLog(error.message);
+        alert(error.message);
+        deleteButton.disabled = false;
+      }
     });
   }
   $("[data-request-code]").addEventListener("click", async () => {
