@@ -6,6 +6,7 @@ const state = {
   authCheckTimer: null,
   profiles: [],
   matches: [],
+  announcements: [],
   settings: null,
   round: null,
   selectedProfileId: "",
@@ -260,13 +261,15 @@ function logout() {
 
 async function loadAdmin() {
   if (!state.token) return;
-  const [profilesPayload, matchesPayload, settingsPayload] = await Promise.all([
+  const [profilesPayload, matchesPayload, settingsPayload, announcementsPayload] = await Promise.all([
     api(`/api/admin/profiles?adminToken=${encodeURIComponent(state.token)}`),
     api(`/api/admin/matches?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/settings?adminToken=${encodeURIComponent(state.token)}`)
+    api(`/api/admin/settings?adminToken=${encodeURIComponent(state.token)}`),
+    api(`/api/admin/announcements?adminToken=${encodeURIComponent(state.token)}`)
   ]);
   state.profiles = profilesPayload.profiles;
   state.matches = matchesPayload.matches;
+  state.announcements = announcementsPayload.announcements || [];
   state.settings = settingsPayload.settings;
   state.round = settingsPayload.round;
   if (!state.selectedProfileId && state.profiles.length) state.selectedProfileId = state.profiles[0].id;
@@ -293,6 +296,7 @@ function renderAdminView() {
   renderProfileDetail();
   renderMatches();
   renderPublishedMatches();
+  renderAnnouncements();
 }
 
 function renderSettings() {
@@ -306,6 +310,69 @@ function renderSettings() {
   $("[data-admin-round-note]").textContent = state.round
     ? `${state.round.label}。每日按个人权重与交叉权重刷新候选，管理员选择推送或暂缓。`
     : "轮次信息加载中。";
+}
+
+function renderAnnouncements() {
+  const target = $("[data-announcement-admin-list]");
+  if (!target) return;
+  if (!state.announcements.length) {
+    target.innerHTML = `<p class="empty-state">暂无网站公告。</p>`;
+    return;
+  }
+  target.innerHTML = state.announcements.map(item => `
+    <article class="announcement-admin-item" data-announcement-id="${escapeHtml(item.id)}">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.body)}</p>
+      </div>
+      <div class="admin-inline-actions">
+        <button class="table-action" type="button" data-edit-announcement="${escapeHtml(item.id)}">编辑</button>
+        <button class="table-action danger-action" type="button" data-delete-announcement="${escapeHtml(item.id)}">删除</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function resetAnnouncementForm() {
+  $("[data-announcement-id]").value = "";
+  $("[data-announcement-title]").value = "";
+  $("[data-announcement-body]").value = "";
+  $("[data-announcement-message]").textContent = "";
+}
+
+async function saveAnnouncement() {
+  const message = $("[data-announcement-message]");
+  message.textContent = "正在保存...";
+  try {
+    const payload = await api("/api/admin/announcements/save", {
+      method: "POST",
+      body: JSON.stringify({
+        adminToken: state.token,
+        announcement: {
+          id: $("[data-announcement-id]").value,
+          title: $("[data-announcement-title]").value,
+          body: $("[data-announcement-body]").value
+        }
+      })
+    });
+    state.announcements = payload.announcements || [];
+    renderAnnouncements();
+    resetAnnouncementForm();
+    message.textContent = "公告已保存。";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm("确定删除这条公告吗？")) return;
+  const payload = await api("/api/admin/announcements/delete", {
+    method: "POST",
+    body: JSON.stringify({ adminToken: state.token, id })
+  });
+  state.announcements = payload.announcements || [];
+  renderAnnouncements();
+  resetAnnouncementForm();
 }
 
 function renderProfiles() {
@@ -668,6 +735,8 @@ $("[data-publish-matches]").addEventListener("click", publishMatches);
 $("[data-seed-demo-users]").addEventListener("click", seedDemoUsers);
 $("[data-delete-demo-users]").addEventListener("click", deleteDemoUsers);
 $("[data-save-settings]").addEventListener("click", saveSettings);
+$("[data-save-announcement]").addEventListener("click", saveAnnouncement);
+$("[data-new-announcement]").addEventListener("click", resetAnnouncementForm);
 document.addEventListener("click", event => {
   const viewButton = event.target.closest("[data-admin-view]");
   if (viewButton) {
@@ -680,6 +749,22 @@ document.addEventListener("click", event => {
     state.selectedProfileId = profileButton.dataset.viewProfile;
     renderProfiles();
     renderProfileDetail();
+    return;
+  }
+  const editAnnouncement = event.target.closest("[data-edit-announcement]");
+  if (editAnnouncement) {
+    const item = state.announcements.find(announcement => announcement.id === editAnnouncement.dataset.editAnnouncement);
+    if (item) {
+      $("[data-announcement-id]").value = item.id;
+      $("[data-announcement-title]").value = item.title || "";
+      $("[data-announcement-body]").value = item.body || "";
+      $("[data-announcement-message]").textContent = "正在编辑已有公告。";
+    }
+    return;
+  }
+  const deleteAnnouncementButton = event.target.closest("[data-delete-announcement]");
+  if (deleteAnnouncementButton) {
+    deleteAnnouncement(deleteAnnouncementButton.dataset.deleteAnnouncement);
     return;
   }
   const button = event.target.closest("[data-save-match]");

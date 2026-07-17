@@ -71,7 +71,7 @@ const pages = [
   {
     title: "第二卷：相处节奏",
     short: "相处节奏",
-    desc: "左栏选择自己更符合的描述，右栏选择期待对方更靠近哪一侧。已提交过问卷的用户请补充更新后的亲密关系、婚姻和生育意向。",
+    desc: "左栏选择自己更符合的描述，右栏选择期待对方更靠近哪一侧。",
     pairs: [
       [{ type: "chips", name: "intent", label: "这次更期待", options: optionSets.intents }, { type: "chips", multi: true, name: "idealIntent", label: "希望对方的期待", options: optionSets.intents }],
       [{ type: "chips", name: "tempo", label: "舒服的沟通节奏", options: optionSets.tempos }, { type: "chips", multi: true, name: "idealTempo", label: "可接受沟通节奏", options: optionSets.tempos }],
@@ -518,6 +518,7 @@ function renderSurveyPage() {
     <button type="button" class="${index === state.pageIndex ? "is-active" : ""}" data-page="${index}"><span>${index + 1}</span>${escapeHtml(item.short)}</button>
   `).join("");
   renderBoundary();
+  renderSubmitState();
 }
 
 function renderAuthState() {
@@ -643,11 +644,13 @@ function bindControls() {
         addSyncedIdealValue(field, value);
       }
       renderSurveyPage();
+      renderSubmitState();
       return;
     }
     const range = event.target.closest("[data-range-field]");
     if (range) {
       setByPath(state.selected, range.dataset.rangeField, Number(range.value));
+      renderSubmitState();
       return;
     }
     const select = event.target.closest("[data-select-field]");
@@ -655,6 +658,7 @@ function bindControls() {
     const value = select.multiple ? Array.from(select.selectedOptions).map(option => option.value) : select.value;
     setByPath(state.selected, select.dataset.selectField, value);
     renderBoundary();
+    renderSubmitState();
   });
 }
 
@@ -702,6 +706,10 @@ function listInOptions(value, options) {
   return Array.isArray(value) && value.length > 0 && value.every(item => options.includes(item));
 }
 
+function hasSelection(value) {
+  return Array.isArray(value) ? value.filter(Boolean).length > 0 : Boolean(value);
+}
+
 function intimacyAnswersCurrent(source) {
   return valueInOptions(source?.intimacy, optionSets.intimacy)
     && listInOptions(source?.idealIntimacy, optionSets.intimacy)
@@ -710,11 +718,56 @@ function intimacyAnswersCurrent(source) {
 }
 
 function needsSurveySupplement(profile) {
-  return !intimacyAnswersCurrent(profile)
-    || !Number.isInteger(profile?.selfMetrics?.marriage)
-    || !Number.isInteger(profile?.idealMetrics?.marriage)
-    || !Number.isInteger(profile?.selfMetrics?.fertility)
-    || !Number.isInteger(profile?.idealMetrics?.fertility);
+  return requiredVolumeNumbers(profile).length > 0;
+}
+
+function surveySnapshot() {
+  const form = $("[data-survey-form]");
+  return {
+    ...(state.profile || {}),
+    ...state.selected,
+    contactValue: form ? (form.elements.contactValue?.value || "").trim() : (state.profile?.contactValue || ""),
+    consent: form ? form.elements.consent?.checked === true : state.profile?.consent === true
+  };
+}
+
+function requiredVolumeNumbers(source = {}) {
+  const missing = new Set();
+  if (!source.displayName
+    || !source.gender
+    || !hasSelection(source.seeking)
+    || !(source.birthYear || source.age)
+    || !(source.identity || source.stage)
+    || source.schoolType !== "北京大学"
+    || !(hasSelection(source.location) || source.city)) {
+    missing.add(1);
+  }
+  if (!source.intent
+    || !source.tempo
+    || !intimacyAnswersCurrent(source)
+    || !Number.isInteger(source.selfMetrics?.marriage)
+    || !Number.isInteger(source.idealMetrics?.marriage)
+    || !Number.isInteger(source.selfMetrics?.fertility)
+    || !Number.isInteger(source.idealMetrics?.fertility)) {
+    missing.add(2);
+  }
+  if (!source.contactValue || source.consent !== true) {
+    missing.add(5);
+  }
+  return [...missing].sort((a, b) => a - b);
+}
+
+function renderSubmitState() {
+  const target = $("[data-submit-state]");
+  if (!target) return;
+  if (!hasAuthToken()) {
+    target.textContent = "尚未提交";
+    return;
+  }
+  const requiredVolumes = requiredVolumeNumbers(surveySnapshot());
+  target.textContent = requiredVolumes.length
+    ? `需更新第 ${requiredVolumes.join("、")} 卷`
+    : "本轮问卷已提交";
 }
 
 function cleanProfileFieldValue(key, value) {
@@ -748,9 +801,6 @@ function fillForm(profile) {
     if (form.elements[name]) form.elements[name].value = profile[name] || "";
   });
   form.elements.consent.checked = profile.consent === true;
-  $("[data-submit-state]").textContent = supplementNeeded
-    ? "问卷有新增题目待补充"
-    : "本轮问卷已提交";
   const message = $("[data-form-message]");
   if (message) {
     message.textContent = supplementNeeded
@@ -767,10 +817,12 @@ function bindForm() {
     if (input.matches("[data-range-field]")) {
       setByPath(state.selected, input.dataset.rangeField, Number(input.value));
       input.closest(".height-slider")?.querySelector("strong")?.replaceChildren(`${input.value} ${input.dataset.rangeUnit || ""}`.trim());
+      renderSubmitState();
       return;
     }
     if (input.name && input.closest(".mirror-field")) setByPath(state.selected, input.name, input.value.trim());
     renderBoundary();
+    renderSubmitState();
   });
   form.addEventListener("submit", async event => {
     event.preventDefault();

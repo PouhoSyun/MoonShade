@@ -439,6 +439,14 @@ function cleanSettings(input = {}) {
   };
 }
 
+function cleanAnnouncement(input = {}, existing = {}) {
+  return {
+    id: existing.id || cleanText(input.id, 80) || crypto.randomUUID(),
+    title: cleanText(input.title, 60),
+    body: cleanText(input.body, 300)
+  };
+}
+
 const currentIntimacyOptions = ["开放态度", "关系决定", "暂无打算", "柏拉图式"];
 const currentIntimacyTimingOptions = ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"];
 const interestFieldNames = ["sportsInterests", "musicInterests", "movieInterests", "travelInterests", "readingInterests", "skillInterests", "gameInterests", "otherInterests"];
@@ -1676,6 +1684,26 @@ async function handleApi(req, res, url) {
       data.settings = cleanSettings(adminBody.settings || adminBody);
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { settings: data.settings, round: currentRound(new Date(), data.settings) });
+    }
+    if (req.method === "GET" && url.pathname === "/api/admin/announcements") {
+      return sendJson(res, 200, { announcements: data.announcements || [] });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/announcements/save") {
+      const source = adminBody.announcement || adminBody;
+      const existing = (data.announcements || []).find(item => item.id === cleanText(source.id, 80));
+      const announcement = cleanAnnouncement(source, existing);
+      if (!announcement.title || !announcement.body) return sendJson(res, 400, { error: "公告标题和正文不能为空。" });
+      data.announcements = existing
+        ? data.announcements.map(item => item.id === existing.id ? announcement : item)
+        : [announcement, ...(data.announcements || [])];
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, { announcements: data.announcements });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/announcements/delete") {
+      const id = cleanText(adminBody.id, 80);
+      data.announcements = (data.announcements || []).filter(item => item.id !== id);
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, { announcements: data.announcements });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/generate") {
       const roundId = currentRound(new Date(), data.settings).id;

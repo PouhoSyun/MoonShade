@@ -80,6 +80,24 @@
             </section>
           </section>
 
+          <section class="panel admin-announcement-panel">
+            <p class="eyebrow">Announcements</p>
+            <h2>网站公告</h2>
+            <input data-announcement-id type="hidden" />
+            <label>公告标题
+              <input data-announcement-title placeholder="例如：MoonShade 内测开放" />
+            </label>
+            <label>公告内容
+              <textarea data-announcement-body rows="3" placeholder="公告会显示在用户状态页。"></textarea>
+            </label>
+            <div class="admin-inline-actions">
+              <button class="secondary-action" data-save-announcement>保存公告</button>
+              <button class="secondary-action" data-new-announcement>新建公告</button>
+            </div>
+            <div class="announcement-admin-list" data-announcement-admin-list></div>
+            <p class="form-message" data-announcement-message></p>
+          </section>
+
           <section class="admin-data-grid">
             <section class="panel">
               <h2>已提交问卷</h2>

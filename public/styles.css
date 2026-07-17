@@ -2897,3 +2897,57 @@ main,
   border-left: 3px solid #d6b150;
   background: rgba(8, 16, 39, 0.26);
 }
+
+/* EOF admin announcements */
+.admin-announcement-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-announcement-panel label {
+  display: grid;
+  gap: 7px;
+  color: #2d3348;
+  font-weight: 800;
+}
+
+.admin-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.announcement-admin-list {
+  display: grid;
+  gap: 10px;
+}
+
+.announcement-admin-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgba(157, 146, 137, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.announcement-admin-item p {
+  margin: 5px 0 0;
+  color: #4f5862;
+  line-height: 1.55;
+}
+
+.announcement-admin-item .danger-action {
+  color: #70463f;
+  border-color: rgba(225, 159, 102, 0.34);
+  background: rgba(255, 246, 239, 0.94);
+}
+
+@media (max-width: 720px) {
+  .announcement-admin-item {
+    grid-template-columns: 1fr;
+  }
+}
