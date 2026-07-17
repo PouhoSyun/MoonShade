@@ -92,6 +92,20 @@ function weightText(frequency) {
   return `时间 ${frequency.timeWeight ?? 0} · 画像 ${frequency.clarityWeight ?? 0}（${clarityPercent}%）· 个人 ${frequency.personalWeight ?? frequency.priority ?? 0} · 性别序 ${frequency.genderRank || "-"}`;
 }
 
+function renderBoundaryWarnings(warnings = []) {
+  if (!warnings.length) return `<div class="match-boundary-ok">所有可接受范围未发现不符合项</div>`;
+  return `
+    <div class="match-boundary-warnings">
+      ${warnings.map(item => `
+        <span>
+          <strong>${escapeHtml(item.strict ? "严格" : "软性")}</strong>
+          ${escapeHtml(item.label)}：${escapeHtml(item.message)}
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
 function appendAdminLog(message) {
   const log = $("[data-admin-local-log]");
   if (!log) return;
@@ -396,6 +410,7 @@ function renderMatches() {
         <textarea data-notes rows="2">${escapeHtml(match.notes || "")}</textarea>
       </label>
       <p>${(match.reasons || []).map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
+      ${renderBoundaryWarnings(match.boundaryWarnings)}
       <div class="match-frequency-notes">
         ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：${escapeHtml(weightText(match.left.matchFrequency))}</span>` : ""}
         ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：${escapeHtml(weightText(match.right.matchFrequency))}</span>` : ""}

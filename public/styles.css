@@ -1179,6 +1179,36 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.match-boundary-ok,
+.match-boundary-warnings {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.match-boundary-ok {
+  color: #486156;
+  background: rgba(238, 246, 241, 0.92);
+  border: 1px solid #cfe1d7;
+}
+
+.match-boundary-warnings {
+  color: #70463f;
+  background: rgba(255, 246, 239, 0.94);
+  border: 1px solid #ecd1c3;
+}
+
+.match-boundary-warnings span {
+  display: block;
+}
+
+.match-boundary-warnings strong {
+  margin-right: 6px;
+}
+
 .match-frequency-notes {
   grid-column: 1 / -1;
   display: flex;

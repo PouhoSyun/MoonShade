@@ -619,6 +619,14 @@ function publicProfile(profile, context = {}) {
       nextEligibleAt: frequency.nextEligibleAt,
       referenceDays: frequency.referenceDays,
       eligible: frequency.eligible,
+      timeWeight: frequency.timeWeight,
+      clarityWeight: frequency.clarityWeight,
+      clarityRatio: frequency.clarityRatio,
+      clarityFilled: frequency.clarityFilled,
+      clarityTotal: frequency.clarityTotal,
+      personalWeight: frequency.personalWeight,
+      genderRank: frequency.genderRank,
+      priority: frequency.priority,
       reason: frequency.reason
     } : undefined,
     updatedAt: profile.updatedAt
@@ -626,9 +634,11 @@ function publicProfile(profile, context = {}) {
 }
 
 function genderCompatible(a, b) {
-  const aOpen = a.seeking.includes("不限");
-  const bOpen = b.seeking.includes("不限");
-  return (aOpen || a.seeking.includes(b.gender)) && (bOpen || b.seeking.includes(a.gender));
+  const aSeeking = asList(a.seeking);
+  const bSeeking = asList(b.seeking);
+  const aOpen = aSeeking.includes("不限");
+  const bOpen = bSeeking.includes("不限");
+  return (aOpen || aSeeking.includes(b.gender)) && (bOpen || bSeeking.includes(a.gender));
 }
 
 function overlapScore(a = [], b = [], weight = 1) {
@@ -672,6 +682,134 @@ function mutualYearRangeScore(aYear, aMin, aMax, bYear, bMin, bMax) {
   if (aHasRange && yearInRange(bYear, aMin, aMax)) score += 3;
   if (bHasRange && yearInRange(aYear, bMin, bMax)) score += 3;
   return score;
+}
+
+function profileYear(profile) {
+  return profile.birthYear || (profile.age ? new Date().getFullYear() - profile.age : null);
+}
+
+function rangeText(min, max) {
+  if (!Number.isInteger(min) && !Number.isInteger(max)) return "未设置";
+  return `${Number.isInteger(min) ? min : "不限"}-${Number.isInteger(max) ? max : "不限"}`;
+}
+
+function asList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
+function listText(value) {
+  const list = asList(value);
+  return list.length ? list.join("、") : "未填写";
+}
+
+function locationAccepted(actualLocation, idealLocations) {
+  const actual = asList(actualLocation);
+  const ideal = asList(idealLocations);
+  if (!actual.length || !ideal.length) return true;
+  return actual.some(item => ideal.includes(item));
+}
+
+function acceptableHit(actualValue, acceptableValues) {
+  const actual = asList(actualValue);
+  const acceptable = asList(acceptableValues);
+  if (!actual.length || !acceptable.length || acceptable.includes("不设偏好") || acceptable.includes("不限")) return true;
+  return actual.some(item => acceptable.includes(item));
+}
+
+function addAcceptableWarning(warnings, owner, candidate, options) {
+  const { field, label, acceptable, actual, actualLabel, strict = false } = options;
+  if (acceptableHit(actual, acceptable)) return;
+  warnings.push({
+    field,
+    strict,
+    label,
+    message: `${owner.displayName || "一方"} 可接受 ${listText(acceptable)}，${candidate.displayName || "对方"} 的${actualLabel || label}为 ${listText(actual)}。`
+  });
+}
+
+function matchBoundaryWarnings(a, b) {
+  const warnings = [];
+  if (!genderCompatible(a, b)) {
+    warnings.push({
+      field: "gender",
+      strict: true,
+      label: "性别边界不符合",
+      message: `${a.displayName || "Moon"} 希望认识 ${listText(a.seeking)}，${b.displayName || "Shade"} 性别为 ${b.gender || "未填写"}；${b.displayName || "Shade"} 希望认识 ${listText(b.seeking)}，${a.displayName || "Moon"} 性别为 ${a.gender || "未填写"}。`
+    });
+  }
+
+  const aYear = profileYear(a);
+  const bYear = profileYear(b);
+  const aHasRange = Number.isInteger(a.idealBirthYearMin) || Number.isInteger(a.idealBirthYearMax);
+  const bHasRange = Number.isInteger(b.idealBirthYearMin) || Number.isInteger(b.idealBirthYearMax);
+  if (aHasRange && bYear && !yearInRange(bYear, a.idealBirthYearMin, a.idealBirthYearMax)) {
+    warnings.push({
+      field: "age",
+      strict: true,
+      label: "出生年不在 Moon 期待范围",
+      message: `${a.displayName || "Moon"} 期待 ${rangeText(a.idealBirthYearMin, a.idealBirthYearMax)}，${b.displayName || "Shade"} 为 ${bYear}。`
+    });
+  }
+  if (bHasRange && aYear && !yearInRange(aYear, b.idealBirthYearMin, b.idealBirthYearMax)) {
+    warnings.push({
+      field: "age",
+      strict: true,
+      label: "出生年不在 Shade 期待范围",
+      message: `${b.displayName || "Shade"} 期待 ${rangeText(b.idealBirthYearMin, b.idealBirthYearMax)}，${a.displayName || "Moon"} 为 ${aYear}。`
+    });
+  }
+
+  if (!locationAccepted(b.location || b.city, a.idealLocations)) {
+    warnings.push({
+      field: "location",
+      strict: true,
+      label: "校区不在 Moon 可接受范围",
+      message: `${a.displayName || "Moon"} 可接受 ${listText(a.idealLocations)}，${b.displayName || "Shade"} 在 ${listText(b.location || b.city)}。`
+    });
+  }
+  if (!locationAccepted(a.location || a.city, b.idealLocations)) {
+    warnings.push({
+      field: "location",
+      strict: true,
+      label: "校区不在 Shade 可接受范围",
+      message: `${b.displayName || "Shade"} 可接受 ${listText(b.idealLocations)}，${a.displayName || "Moon"} 在 ${listText(a.location || a.city)}。`
+    });
+  }
+
+  const firstVolumeChecks = [
+    ["identity", "身份", "身份", "idealIdentities", profile => profile.identity || profile.stage],
+    ["schoolType", "院校背景", "院校背景", "idealSchoolTypes", profile => profile.schoolType],
+    ["hometownRegion", "家乡地区", "家乡地区", "idealHometownRegions", profile => regionForProvince(profile.hometownProvince)],
+    ["homeArea", "成长环境", "成长环境", "idealHomeAreas", profile => profile.homeArea],
+    ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department]
+  ];
+  for (const [field, label, actualLabel, idealKey, actualGetter] of firstVolumeChecks) {
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+  }
+
+  const otherAcceptableChecks = [
+    ["intent", "关系期待", "关系期待", "idealIntent", profile => profile.intent],
+    ["tempo", "沟通节奏", "沟通节奏", "idealTempo", profile => profile.tempo],
+    ["intimacy", "亲密边界", "亲密边界", "idealIntimacy", profile => profile.intimacy],
+    ["intimacyTiming", "亲密关系发生时间", "亲密关系发生时间", "idealIntimacyTiming", profile => profile.intimacyTiming],
+    ["weekend", "周末偏好", "周末偏好", "idealWeekends", profile => profile.selfWeekends || profile.weekend],
+    ["values", "关系价值观", "关系价值观", "idealValues", profile => profile.selfValues || profile.values],
+    ["style", "穿着气质", "穿着气质", "idealStyle", profile => profile.selfStyle],
+    ["appearanceFeel", "外在年龄感", "外在年龄感", "idealAppearanceFeel", profile => profile.appearanceFeel],
+    ["hair", "头发长度", "头发长度", "idealHair", profile => profile.hair],
+    ["glasses", "眼镜状态", "眼镜状态", "idealGlasses", profile => profile.glasses]
+  ];
+  for (const [field, label, actualLabel, idealKey, actualGetter] of otherAcceptableChecks) {
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+  }
+  return warnings;
+}
+
+function hardBoundaryCompatible(a, b) {
+  return !matchBoundaryWarnings(a, b).some(item => item.strict);
 }
 
 function metricScore(a, b) {
@@ -895,7 +1033,7 @@ function mbtiMetricScore(a, b) {
 }
 
 function scorePair(a, b) {
-  if (a.id === b.id || !genderCompatible(a, b)) return null;
+  if (a.id === b.id || !hardBoundaryCompatible(a, b)) return null;
 
   let score = 45;
   const reasons = [];
@@ -1039,6 +1177,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
     used.add(best.right.id);
     const leftFrequency = frequencies.get(best.left.id);
     const rightFrequency = frequencies.get(best.right.id);
+    const boundaryWarnings = matchBoundaryWarnings(best.left, best.right);
     pairs.push({
       id: crypto.randomUUID(),
       roundId,
@@ -1072,6 +1211,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
         ...best.reasons,
         `个人权重合计 ${Math.round(best.personalWeight)}`,
         `交叉相似权重 ${Math.round(best.crossWeight)}`,
+        boundaryWarnings.length ? `存在 ${boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过",
         best.lastRepeat ? "已对上次搭档重复作降权" : "已参考历史搭档避重"
       ].slice(0, 8),
       status: "draft",
@@ -1233,11 +1373,16 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
   return [...matches].sort((a, b) => {
     if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || 0) - (a.adjustedScore || 0);
     return matchTime(b) - matchTime(a);
-  }).map(match => ({
-    ...match,
-    left: byId.get(match.leftId) ? publicProfile(byId.get(match.leftId), { frequencyMap: frequencies }) : null,
-    right: byId.get(match.rightId) ? publicProfile(byId.get(match.rightId), { frequencyMap: frequencies }) : null
-  }));
+  }).map(match => {
+    const leftProfile = byId.get(match.leftId);
+    const rightProfile = byId.get(match.rightId);
+    return {
+      ...match,
+      boundaryWarnings: leftProfile && rightProfile ? matchBoundaryWarnings(leftProfile, rightProfile) : [],
+      left: leftProfile ? publicProfile(leftProfile, { frequencyMap: frequencies }) : null,
+      right: rightProfile ? publicProfile(rightProfile, { frequencyMap: frequencies }) : null
+    };
+  });
 }
 
 async function handleApi(req, res, url) {
