@@ -18,11 +18,20 @@ const optionSets = {
   intimacy: ["开放态度", "关系决定", "暂无打算", "柏拉图式"],
   intimacyTiming: ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"],
   weekends: ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"],
+  dietaryPreferences: ["喜辣", "喜甜", "喜咸", "清淡", "清真"],
   values: ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"],
   styles: ["清冷", "学院", "运动", "中式", "正式", "随性"],
   hair: ["短发", "中长发", "长发", "不设偏好"],
   glasses: ["常戴", "偶尔戴", "基本不戴", "不设偏好"],
-  appearanceFeel: ["成熟", "同龄", "少年", "不明显", "不设偏好"]
+  appearanceFeel: ["成熟", "同龄", "少年", "不明显", "不设偏好"],
+  sportsInterests: ["徒步", "跑步", "攀岩", "自行车", "足球", "篮球", "排球", "羽毛球", "乒乓球", "台球", "棒垒球", "壁球", "地板球", "网球", "游泳", "潜水", "冲浪", "赛艇", "桨板", "滑雪", "滑冰", "轮滑", "花滑", "体操", "舞蹈", "武术", "健身健美", "拳击", "瑜伽", "登山", "射箭", "定向", "养生", "太极拳", "围棋", "中国象棋", "国际象棋", "电竞"],
+  musicInterests: ["流行", "摇滚", "古典", "爵士", "民谣", "说唱", "电音", "国风", "纯音乐", "小语种"],
+  movieInterests: ["科幻", "悬疑", "动作", "剧情", "文艺", "喜剧", "恐怖", "纪录", "动漫", "华语", "欧美", "日韩", "港台", "小众"],
+  travelInterests: ["自由行", "度假", "自驾游", "一人行", "骑游", "户外", "特种兵", "穷游", "旅居", "跟团", "露营", "京郊", "国内", "海岸", "山水", "都市", "文保", "荒野", "境外", "环球"],
+  readingInterests: ["小说", "散文", "诗歌", "纪实", "哲学", "心理", "财经", "艺术", "语言", "社会", "技术"],
+  skillInterests: ["驾驶", "摄影", "平面设计", "剪辑", "绘画", "声乐", "钢琴", "管弦乐", "打击乐", "书法", "写作", "演讲", "辩论", "编程", "硬件", "模玩", "手作", "烹饪", "甜品", "养宠", "绿植", "外语", "方言", "编织", "音乐制作", "数字艺术"],
+  gameInterests: ["竞技", "射击", "策略", "沙盒", "角色扮演", "乙游", "休闲", "经营", "塔防", "页游", "手游", "端游", "主机", "桌游", "密室", "剧本杀"],
+  otherInterests: ["美妆", "穿搭", "探店", "收纳", "冥想", "同人", "追星", "木工", "陶艺", "无人机"]
 };
 
 const scaleQuestions = [
@@ -81,6 +90,8 @@ const pages = [
     desc: "左栏选择自己外观与内在的画像，右栏可多选划定可以接受的范围。",
     pairs: [
       [{ type: "chips", multi: true, name: "selfWeekends", label: "周末常出现的场景", options: optionSets.weekends }, { type: "chips", multi: true, name: "idealWeekends", label: "希望对方也喜欢", options: optionSets.weekends }],
+      [{ type: "chips", multi: true, name: "dietaryPreferences", label: "饮食口味喜好", options: optionSets.dietaryPreferences }, null],
+      [{ type: "expenseSlider", name: "monthlyExpense", label: "参考月生活开支", min: 1000, max: 5000, step: 100, defaultValue: 3000 }, null],
       [{ type: "chips", multi: true, name: "selfValues", label: "关系里我会主动带来的东西", options: optionSets.values }, { type: "chips", multi: true, name: "idealValues", label: "希望对方重视", options: optionSets.values }],
       [{ type: "chips", multi: true, name: "selfStyle", label: "日常穿着气质", options: optionSets.styles }, { type: "chips", multi: true, name: "idealStyle", label: "容易吸引你的穿着气质", options: optionSets.styles }],
       [{ type: "heightSlider", name: "height", label: "我的身高", min: 140, max: 210, defaultValue: 170 }, { type: "heightSlider", name: "idealHeight", label: "最理想的伴侣身高", min: 140, max: 210, defaultValue: 170 }],
@@ -90,7 +101,24 @@ const pages = [
     ]
   },
   {
-    title: "第四卷：联系确认",
+    title: "第四卷：兴趣爱好",
+    short: "兴趣爱好",
+    desc: "本卷所有题均为选择性作答，每个分类最多选五项，用于进一步筛选匹配对象。标签集并不保证分立和覆盖，仅用于提供兴趣方向参考。未涉及的部分可以在最末的填空栏输入，输入的结果将展示给匹配对象。",
+    pairs: [],
+    singleFields: [
+      { type: "chips", multi: true, max: 5, name: "sportsInterests", label: "体育", options: optionSets.sportsInterests },
+      { type: "chips", multi: true, max: 5, name: "musicInterests", label: "音乐", options: optionSets.musicInterests },
+      { type: "chips", multi: true, max: 5, name: "movieInterests", label: "电影", options: optionSets.movieInterests },
+      { type: "chips", multi: true, max: 5, name: "travelInterests", label: "旅行", options: optionSets.travelInterests },
+      { type: "chips", multi: true, max: 5, name: "readingInterests", label: "读书", options: optionSets.readingInterests },
+      { type: "chips", multi: true, max: 5, name: "skillInterests", label: "技术", options: optionSets.skillInterests },
+      { type: "chips", multi: true, max: 5, name: "gameInterests", label: "游戏", options: optionSets.gameInterests },
+      { type: "chips", multi: true, max: 5, name: "otherInterests", label: "其他", options: optionSets.otherInterests },
+      { type: "textarea", name: "otherInterestText", label: "未涉及到的爱好填空", placeholder: "这部分内容会在匹配成功后推送给匹配对象。" }
+    ]
+  },
+  {
+    title: "第五卷：联系确认",
     short: "联系确认",
     desc: "留下匹配成功后可展示的联系方式，你之后仍然可以回到问卷更新答案。",
     pairs: [],
@@ -124,6 +152,17 @@ const selfToIdealField = {
   hair: "idealHair",
   glasses: "idealGlasses"
 };
+
+const interestFields = [
+  ["sportsInterests", "体育"],
+  ["musicInterests", "音乐"],
+  ["movieInterests", "电影"],
+  ["travelInterests", "旅行"],
+  ["readingInterests", "读书"],
+  ["skillInterests", "技术"],
+  ["gameInterests", "游戏"],
+  ["otherInterests", "其他"]
+];
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -302,6 +341,14 @@ function renderField(field) {
   if (field.type === "input") {
     return `<label class="mirror-field"><span>${escapeHtml(field.label)}</span><input name="${field.name}" value="${escapeHtml(current || "")}" placeholder="${escapeHtml(field.placeholder || "")}" /></label>`;
   }
+  if (field.type === "textarea") {
+    return `
+      <label class="mirror-field">
+        <span>${escapeHtml(field.label)}</span>
+        <textarea name="${field.name}" rows="${field.rows || 4}" placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(current || "")}</textarea>
+      </label>
+    `;
+  }
   if (field.type === "select") {
     return `
       <label class="mirror-field">
@@ -363,8 +410,20 @@ function renderField(field) {
       <div class="mirror-field height-field">
         <span>${escapeHtml(field.label)}</span>
         <div class="height-slider">
-          <input type="range" min="${field.min}" max="${field.max}" step="1" value="${value}" data-range-field="${escapeHtml(field.name)}" />
+          <input name="${escapeHtml(field.name)}" type="range" min="${field.min}" max="${field.max}" step="1" value="${value}" data-range-field="${escapeHtml(field.name)}" data-range-unit="cm" />
           <strong>${value} cm</strong>
+        </div>
+      </div>
+    `;
+  }
+  if (field.type === "expenseSlider") {
+    const value = Number(selectedValue(field.name) ?? field.defaultValue ?? 3000);
+    return `
+      <div class="mirror-field expense-field">
+        <span>${escapeHtml(field.label)}</span>
+        <div class="height-slider expense-slider">
+          <input name="${escapeHtml(field.name)}" type="range" min="${field.min}" max="${field.max}" step="${field.step || 100}" value="${value}" data-range-field="${escapeHtml(field.name)}" data-range-unit="元/月" />
+          <strong>${value} 元/月</strong>
         </div>
       </div>
     `;
@@ -421,7 +480,7 @@ function renderField(field) {
   return `
     <div class="mirror-field">
       <span>${escapeHtml(field.label)}</span>
-      <div class="segmented ${field.multi ? "multi" : ""}" data-field="${field.name}" data-exclusive="${escapeHtml(field.exclusive || "")}">
+      <div class="segmented ${field.multi ? "multi" : ""}" data-field="${field.name}" data-exclusive="${escapeHtml(field.exclusive || "")}" data-max="${field.max || ""}">
         ${field.options.map(option => optionButton(option, field.multi ? selected.includes(String(option)) : String(current ?? "") === String(option), field.name, field.multi)).join("")}
       </div>
     </div>
@@ -434,15 +493,18 @@ function renderSurveyPage() {
   renderAuthState();
   $(".survey-sidebar").hidden = !authed;
   $(".form-title").hidden = !authed;
+  $(".mirror-frame").classList.toggle("is-single", Boolean(page.singleFields));
   $("[data-page-title]").textContent = page.title;
   $("[data-page-desc]").textContent = page.desc;
   $("[data-survey-progress]").textContent = `${state.pageIndex + 1} / ${pages.length} ${page.short}`;
-  $("[data-paired-fields]").innerHTML = page.pairs.map(([self, ideal]) => `
-    <div class="mirror-pair-row">
-      <div class="mirror-cell moon-cell">${renderField(self)}</div>
-      <div class="mirror-cell shade-cell">${renderField(ideal)}</div>
-    </div>
-  `).join("");
+  $("[data-paired-fields]").innerHTML = page.singleFields
+    ? `<div class="single-fields">${page.singleFields.map(field => `<div class="mirror-cell moon-cell single-field-row">${renderField(field)}</div>`).join("")}</div>`
+    : page.pairs.map(([self, ideal]) => `
+      <div class="mirror-pair-row">
+        <div class="mirror-cell moon-cell">${renderField(self)}</div>
+        <div class="mirror-cell shade-cell">${renderField(ideal)}</div>
+      </div>
+    `).join("");
   $("[data-contact-page]").hidden = !authed || !page.contact;
   $(".mirror-frame").hidden = !authed || page.contact;
   $("[data-prev-page]").disabled = state.pageIndex === 0;
@@ -531,6 +593,12 @@ function bindControls() {
     if (multi) {
       const list = new Set(selectedValue(field) || []);
       list.has(value) ? list.delete(value) : list.add(value);
+      const max = Number(group.dataset.max || 0);
+      if (max && list.size > max) {
+        list.delete(value);
+        const message = $("[data-form-message]");
+        if (message) message.textContent = "每个兴趣分类最多选择 5 个。";
+      }
       if (exclusive && value === exclusive && list.has(exclusive)) setByPath(state.selected, field, [exclusive]);
       else {
         if (exclusive) list.delete(exclusive);
@@ -553,6 +621,13 @@ function bindControls() {
         const checkedValues = Array.from(group.querySelectorAll("[data-option-field]:checked"))
           .filter(item => item.dataset.optionField === field)
           .map(item => /^-?\d$/.test(item.value) ? Number(item.value) : item.value);
+        const max = Number(group?.dataset.max || 0);
+        if (max && checkedValues.length > max) {
+          option.checked = false;
+          const message = $("[data-form-message]");
+          if (message) message.textContent = "每个兴趣分类最多选择 5 个。";
+          return;
+        }
         const list = new Set(checkedValues);
         if (exclusive && value === exclusive && list.has(exclusive)) setByPath(state.selected, field, [exclusive]);
         else {
@@ -659,6 +734,8 @@ function fillForm(profile) {
     "homeArea", "idealHomeAreas", "idealDisciplines", "intent", "idealIntent", "tempo", "idealTempo",
     "intimacy", "idealIntimacy", "intimacyTiming", "idealIntimacyTiming",
     "mbti", "mbtiMetrics", "idealMbtiMetrics", "selfMetrics", "idealMetrics", "selfWeekends", "idealWeekends", "selfValues", "idealValues",
+    "dietaryPreferences", "monthlyExpense",
+    "sportsInterests", "musicInterests", "movieInterests", "travelInterests", "readingInterests", "skillInterests", "gameInterests", "otherInterests", "otherInterestText",
     "selfStyle", "idealStyle", "height", "idealHeight", "appearanceFeel", "idealAppearanceFeel", "hair", "idealHair", "glasses", "idealGlasses"
   ].forEach(key => {
     if (profile[key] !== undefined && profile[key] !== null) setByPath(state.selected, key, cleanProfileFieldValue(key, profile[key]));
@@ -686,10 +763,10 @@ function bindForm() {
     const input = event.target;
     if (input.matches("[data-range-field]")) {
       setByPath(state.selected, input.dataset.rangeField, Number(input.value));
-      input.closest(".height-slider")?.querySelector("strong")?.replaceChildren(`${input.value} cm`);
+      input.closest(".height-slider")?.querySelector("strong")?.replaceChildren(`${input.value} ${input.dataset.rangeUnit || ""}`.trim());
       return;
     }
-    if (input.name && input.closest(".mirror-cell")) setByPath(state.selected, input.name, input.value.trim());
+    if (input.name && input.closest(".mirror-field")) setByPath(state.selected, input.name, input.value.trim());
     renderBoundary();
   });
   form.addEventListener("submit", async event => {
@@ -952,21 +1029,36 @@ async function loadMatches() {
       list.innerHTML = `<div class="empty-state results-empty">管理员还没有发布本轮匹配。生成后的匹配表会先进入后台审核，发布后才会在这里显示。</div>`;
       return;
     }
-    list.innerHTML = payload.matches.map(renderMatch).join("");
+    list.innerHTML = payload.matches.map(item => renderMatch(item, payload.profile)).join("");
   } catch (error) {
     list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
 }
 
-function renderMatch(item) {
+function commonInterestTags(selfProfile = {}, otherProfile = {}) {
+  return interestFields.flatMap(([field, label]) => {
+    const own = new Set(Array.isArray(selfProfile[field]) ? selfProfile[field] : []);
+    const common = (Array.isArray(otherProfile[field]) ? otherProfile[field] : []).filter(value => own.has(value));
+    return common.map(value => `${label}：${value}`);
+  });
+}
+
+function renderMatch(item, selfProfile) {
   const profile = item.profile;
   const location = Array.isArray(profile.location) ? profile.location.join("、") : (profile.location || profile.city);
   const profileMeta = [profile.birthYear ? `${profile.birthYear} 年` : "", profile.gender, profile.identity || profile.stage, location, profile.discipline || profile.department].filter(Boolean).join(" · ");
   const pushedAt = item.pushedAt ? formatDateTime(item.pushedAt) : "待确认";
+  const commonInterests = commonInterestTags(selfProfile, profile);
+  const interestBlock = commonInterests.length || profile.otherInterestText
+    ? `<div class="interest-match">
+        ${commonInterests.length ? `<strong>共同爱好</strong><div class="reason-list">${commonInterests.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+        ${profile.otherInterestText ? `<p><strong>TA补充的爱好：</strong>${escapeHtml(profile.otherInterestText)}</p>` : ""}
+      </div>`
+    : "";
   const contact = item.contact
     ? `<div class="contact-box"><strong>${escapeHtml(item.contact.type || "联系方式")}</strong><br>${escapeHtml(item.contact.value)}</div>`
     : `<div class="contact-box">管理员发布后展示联系方式。</div>`;
-  return `<article class="match-card"><div class="match-score">${item.score}</div><div><p class="eyebrow">MoonShade Match</p><h3>${escapeHtml(profile.displayName)}</h3><p class="match-time">匹配时间：${escapeHtml(pushedAt)}</p><p class="match-meta">${escapeHtml(profileMeta)}</p></div><p>${escapeHtml(profile.selfIntro || "对方还没有写自我介绍。")}</p><div class="reason-list">${item.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}</div>${contact}</article>`;
+  return `<article class="match-card"><div class="match-score">${item.score}</div><div><p class="eyebrow">MoonShade Match</p><h3>${escapeHtml(profile.displayName)}</h3><p class="match-time">匹配时间：${escapeHtml(pushedAt)}</p><p class="match-meta">${escapeHtml(profileMeta)}</p></div><p>${escapeHtml(profile.selfIntro || "对方还没有写自我介绍。")}</p><div class="reason-list">${item.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}</div>${interestBlock}${contact}</article>`;
 }
 
 function bindResults() {

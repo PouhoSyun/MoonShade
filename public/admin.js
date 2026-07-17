@@ -311,12 +311,13 @@ function renderSettings() {
 function renderProfiles() {
   const table = $("[data-profile-table]");
   table.innerHTML = `
-    <thead><tr><th>学号</th><th>展示名</th><th>个人权重</th><th>上次匹配</th><th>身份</th></tr></thead>
+    <thead><tr><th>学号</th><th>展示名</th><th>性别</th><th>个人权重</th><th>上次匹配</th><th>身份</th></tr></thead>
     <tbody>
       ${state.profiles.map(profile => `
         <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}" data-view-profile="${escapeHtml(profile.id)}">
           <td>${escapeHtml(studentIdFromEmail(profile.email))}</td>
           <td>${escapeHtml(profile.displayName)}</td>
+          <td>${escapeHtml(profile.gender)}</td>
           <td><span class="frequency-badge">${escapeHtml(personalWeightValue(profile.matchFrequency))}</span></td>
           <td>${escapeHtml(lastMatchText(profile.matchFrequency))}</td>
           <td>${escapeHtml(profile.identity)}</td>
@@ -363,6 +364,8 @@ function renderProfileDetail() {
       ["可接受亲密边界", profile.idealIntimacy],
       ["亲密关系发生时间", profile.intimacyTiming],
       ["可接受发生时间", profile.idealIntimacyTiming],
+      ["饮食口味喜好", profile.dietaryPreferences],
+      ["参考月生活开支", profile.monthlyExpense ? `${profile.monthlyExpense} 元/月` : ""],
       ["MBTI 四维", profile.mbtiMetrics],
       ["期待 MBTI 四维", profile.idealMbtiMetrics],
       ["自我气质量表", profile.selfMetrics],
@@ -383,6 +386,17 @@ function renderProfileDetail() {
       ["可接受头发长度", profile.idealHair],
       ["眼镜状态", profile.glasses],
       ["可接受眼镜状态", profile.idealGlasses]
+    ])}
+    ${detailBlock("兴趣爱好", [
+      ["体育", profile.sportsInterests],
+      ["音乐", profile.musicInterests],
+      ["电影", profile.movieInterests],
+      ["旅行", profile.travelInterests],
+      ["读书", profile.readingInterests],
+      ["技术", profile.skillInterests],
+      ["游戏", profile.gameInterests],
+      ["其他", profile.otherInterests],
+      ["未涉及到的爱好", profile.otherInterestText]
     ])}
     ${detailBlock("联系确认", [
       ["联系方式", `${profile.contactType || ""} ${profile.contactValue || ""}`],

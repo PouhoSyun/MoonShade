@@ -1902,6 +1902,20 @@ textarea:focus {
   background: transparent;
 }
 
+.mirror-frame.is-single .mirror-heading {
+  display: none;
+}
+
+.single-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+}
+
+.single-field-row .mirror-field {
+  min-height: 118px;
+}
+
 .mirror-pair-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2769,4 +2783,87 @@ main,
 
 .home-login-panel .entry-panel.home-entry .panel-links [data-delete-account] {
   color: #f3c6b1 !important;
+}
+
+.interest-match {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(231, 214, 155, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 252, 239, 0.62);
+}
+
+.interest-match p {
+  margin: 0;
+  color: #3e4852;
+}
+
+/* EOF fourth-volume and hero note polish */
+.mirror-frame.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.single-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 18px;
+}
+
+.single-field-row {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(212, 204, 193, 0.78);
+  background:
+    radial-gradient(circle at 10% 0, rgba(255, 246, 203, 0.5), transparent 32%),
+    rgba(255, 252, 244, 0.9);
+  box-shadow: 0 12px 32px rgba(45, 39, 37, 0.045);
+}
+
+.single-field-row .mirror-field {
+  width: 100%;
+  min-height: 112px;
+  padding: 18px 28px;
+  border-bottom: 0;
+}
+
+.single-field-row .segmented .option-pill.is-selected,
+.single-field-row .segmented .option-pill:has(input:checked) {
+  border-color: #d1a94a;
+  background: #fff5cf;
+  color: #3c3320;
+}
+
+.hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.hero-kicker .eyebrow,
+.hero-xhs-note {
+  margin: 0;
+  color: #fff8dc;
+  font-weight: 800;
+  font-size: clamp(18px, 2vw, 26px);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+}
+
+.hero-xhs-note {
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 248, 220, 0.34);
+}
+
+@media (max-width: 720px) {
+  .hero-kicker {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .hero-xhs-note {
+    padding-left: 12px;
+  }
 }

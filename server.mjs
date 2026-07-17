@@ -402,6 +402,11 @@ function cleanHeight(value) {
   return Number.isInteger(number) && number >= 140 && number <= 210 ? number : null;
 }
 
+function cleanMonthlyExpense(value) {
+  const number = Number.parseInt(value, 10);
+  return Number.isInteger(number) && number >= 1000 && number <= 5000 ? number : null;
+}
+
 function cleanMbtiMap(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const keys = ["ei", "sn", "tf", "jp"];
@@ -436,6 +441,7 @@ function cleanSettings(input = {}) {
 
 const currentIntimacyOptions = ["开放态度", "关系决定", "暂无打算", "柏拉图式"];
 const currentIntimacyTimingOptions = ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"];
+const interestFieldNames = ["sportsInterests", "musicInterests", "movieInterests", "travelInterests", "readingInterests", "skillInterests", "gameInterests", "otherInterests"];
 
 function hasCurrentOption(value, allowed) {
   return allowed.includes(value);
@@ -444,6 +450,10 @@ function hasCurrentOption(value, allowed) {
 function hasCurrentOptionList(value, allowed) {
   const list = Array.isArray(value) ? value : [];
   return list.length > 0 && list.every(item => allowed.includes(item));
+}
+
+function cleanInterestList(value) {
+  return cleanList(value).map(item => cleanText(item, 40)).filter(Boolean).slice(0, 5);
 }
 
 function currentRound(now = new Date(), settings = defaultData.settings) {
@@ -479,7 +489,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedSeek = ["女", "男", "非二元", "不限"];
   const allowedIdentities = ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"];
   const allowedSchoolTypes = ["北京大学"];
-  const allowedLocations = ["燕园", "马池口", "学院路", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"];
+  const allowedLocations = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"];
   const allowedProvinces = ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"];
   const allowedRegions = ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"];
   const allowedHomeAreas = ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区", "乡村", "流动成长"];
@@ -487,6 +497,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedIntent = ["快速转进", "认真发展", "先交朋友", "慢慢了解"];
   const allowedTempo = ["高频交流", "日常分享", "低频稳定", "线下优先"];
   const allowedWeekend = ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"];
+  const allowedDietaryPreferences = ["喜辣", "喜甜", "喜咸", "清淡", "清真"];
   const allowedValues = ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"];
   const allowedStyle = ["清冷", "学院", "运动", "中式", "正式", "随性"];
   const allowedHair = ["短发", "中长发", "长发", "不设偏好"];
@@ -530,6 +541,10 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     intimacyTiming: currentIntimacyTimingOptions.includes(input.intimacyTiming) ? input.intimacyTiming : "",
     idealIntimacyTiming: cleanList(input.idealIntimacyTiming, currentIntimacyTimingOptions),
     weekend: cleanList(input.weekend || input.selfWeekends, allowedWeekend),
+    dietaryPreferences: cleanList(input.dietaryPreferences, allowedDietaryPreferences),
+    monthlyExpense: cleanMonthlyExpense(input.monthlyExpense),
+    ...Object.fromEntries(interestFieldNames.map(field => [field, cleanInterestList(input[field])])),
+    otherInterestText: cleanText(input.otherInterestText, 300),
     values: cleanList(input.values || input.selfValues, allowedValues),
     selfWeekends: cleanList(input.selfWeekends || input.weekend, allowedWeekend),
     idealWeekends: cleanList(input.idealWeekends, allowedWeekend),
@@ -609,6 +624,10 @@ function publicProfile(profile, context = {}) {
     intimacy: profile.intimacy,
     intimacyTiming: profile.intimacyTiming,
     weekend: profile.weekend,
+    dietaryPreferences: profile.dietaryPreferences,
+    monthlyExpense: profile.monthlyExpense,
+    ...Object.fromEntries(interestFieldNames.map(field => [field, profile[field] || []])),
+    otherInterestText: profile.otherInterestText,
     values: profile.values,
     selfWeekends: profile.selfWeekends,
     selfValues: profile.selfValues,
@@ -924,6 +943,10 @@ function profileClarity(profile) {
     profile.tempo,
     profile.intimacy,
     profile.intimacyTiming,
+    profile.dietaryPreferences,
+    profile.monthlyExpense,
+    ...interestFieldNames.map(field => profile[field]),
+    profile.otherInterestText,
     profile.mbtiMetrics,
     profile.selfWeekends,
     profile.selfValues,
@@ -1371,6 +1394,17 @@ function demoProfile(overrides) {
     intimacyTiming: overrides.intimacyTiming || "关系稳定后",
     idealIntimacyTiming: overrides.idealIntimacyTiming || ["婚后", "关系稳定后", "相熟数月后"],
     weekend: overrides.selfWeekends,
+    dietaryPreferences: overrides.dietaryPreferences || ["清淡"],
+    monthlyExpense: overrides.monthlyExpense || 3000,
+    sportsInterests: overrides.sportsInterests || ["跑步", "羽毛球"],
+    musicInterests: overrides.musicInterests || ["流行", "民谣"],
+    movieInterests: overrides.movieInterests || ["剧情", "纪录"],
+    travelInterests: overrides.travelInterests || ["自由行", "山水"],
+    readingInterests: overrides.readingInterests || ["小说", "纪实"],
+    skillInterests: overrides.skillInterests || ["摄影", "烹饪"],
+    gameInterests: overrides.gameInterests || ["桌游"],
+    otherInterests: overrides.otherInterests || ["探店"],
+    otherInterestText: overrides.otherInterestText || "也喜欢逛展和找安静的小店。",
     values: overrides.selfValues,
     selfWeekends: overrides.selfWeekends,
     idealWeekends: overrides.idealWeekends || ["散步游览", "运动户外", "做饭探店", "自习工作"],
