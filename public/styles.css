@@ -2841,8 +2841,7 @@ main,
   margin-bottom: 12px;
 }
 
-.hero-kicker .eyebrow,
-.hero-xhs-note {
+.hero-kicker .eyebrow {
   margin: 0;
   color: #fff8dc;
   font-weight: 800;
@@ -2853,8 +2852,18 @@ main,
 }
 
 .hero-xhs-note {
-  padding-left: 16px;
-  border-left: 1px solid rgba(255, 248, 220, 0.34);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(231, 199, 98, 0.28);
+  border-radius: 999px;
+  color: rgba(247, 241, 215, 0.84);
+  background: rgba(8, 16, 39, 0.42);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 }
 
 @media (max-width: 720px) {
@@ -2864,6 +2873,13 @@ main,
   }
 
   .hero-xhs-note {
-    padding-left: 12px;
+    font-size: 12px;
   }
+}
+
+/* EOF form status color override */
+.survey-shell [data-submit-state],
+.survey-shell .form-message,
+.survey-shell [data-form-message] {
+  color: #d6b150;
 }
