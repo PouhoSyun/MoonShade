@@ -17,6 +17,7 @@ const optionSets = {
   tempos: ["高频交流", "日常分享", "低频稳定", "线下优先"],
   intimacy: ["开放态度", "关系决定", "暂无打算", "柏拉图式"],
   intimacyTiming: ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"],
+  socialBoundaries: ["开放性", "保持现状", "排他性"],
   weekends: ["外出旅行", "散步游览", "朋友聚会", "运动户外", "自习工作", "做饭探店", "球番剧竞"],
   dietaryPreferences: ["喜辣", "喜甜", "喜咸", "清淡", "清真"],
   values: ["坦诚表达", "边界清晰", "共同成长", "情绪稳定", "生活有序", "保持好奇"],
@@ -75,8 +76,9 @@ const pages = [
     pairs: [
       [{ type: "chips", name: "intent", label: "这次更期待", options: optionSets.intents }, { type: "chips", multi: true, name: "idealIntent", label: "希望对方的期待", options: optionSets.intents }],
       [{ type: "chips", name: "tempo", label: "舒服的沟通节奏", options: optionSets.tempos }, { type: "chips", multi: true, name: "idealTempo", label: "可接受沟通节奏", options: optionSets.tempos }],
-      [{ type: "chips", name: "intimacy", label: "恋爱接受程度", options: optionSets.intimacy }, { type: "chips", multi: true, name: "idealIntimacy", label: "希望对方的边界", options: optionSets.intimacy }],
+      [{ type: "chips", name: "intimacy", label: "恋爱边界", options: optionSets.intimacy }, { type: "chips", multi: true, name: "idealIntimacy", label: "希望对方的边界", options: optionSets.intimacy }],
       [{ type: "chips", name: "intimacyTiming", label: "对亲密关系态度", options: optionSets.intimacyTiming }, { type: "chips", multi: true, name: "idealIntimacyTiming", label: "可接受发生时间", options: optionSets.intimacyTiming }],
+      [{ type: "chips", name: "socialBoundary", label: "恋爱后交际圈边界", options: optionSets.socialBoundaries }, { type: "chips", multi: true, name: "idealSocialBoundary", label: "可接受对方交际圈边界", options: optionSets.socialBoundaries }],
       [{ type: "mbtiSliders", name: "mbtiMetrics", label: "MBTI 四维倾向" }, { type: "mbtiSliders", name: "idealMbtiMetrics", label: "希望对方的 MBTI 倾向" }],
       ...scaleQuestions.map(item => [
         { ...item, type: "scale", name: `selfMetrics.${item.key}` },
@@ -92,7 +94,6 @@ const pages = [
       [{ type: "chips", multi: true, name: "selfWeekends", label: "周末常出现的场景", options: optionSets.weekends }, { type: "chips", multi: true, name: "idealWeekends", label: "希望对方也喜欢", options: optionSets.weekends }],
       [{ type: "chips", multi: true, name: "dietaryPreferences", label: "饮食口味喜好", options: optionSets.dietaryPreferences }, null],
       [{ type: "expenseSlider", name: "monthlyExpense", label: "参考月生活开支", min: 1000, max: 5000, step: 100, defaultValue: 3000 }, null],
-      [{ type: "chips", multi: true, name: "selfValues", label: "关系里我会主动带来的东西", options: optionSets.values }, { type: "chips", multi: true, name: "idealValues", label: "希望对方重视", options: optionSets.values }],
       [{ type: "chips", multi: true, name: "selfStyle", label: "日常穿着气质", options: optionSets.styles }, { type: "chips", multi: true, name: "idealStyle", label: "容易吸引你的穿着气质", options: optionSets.styles }],
       [{ type: "heightSlider", name: "height", label: "我的身高", min: 140, max: 210, defaultValue: 170 }, { type: "heightSlider", name: "idealHeight", label: "最理想的伴侣身高", min: 140, max: 210, defaultValue: 170 }],
       [{ type: "chips", name: "appearanceFeel", label: "别人通常觉得我", options: optionSets.appearanceFeel.filter(item => item !== "不设偏好") }, { type: "chips", multi: true, exclusive: "不设偏好", name: "idealAppearanceFeel", label: "外在年龄感可接受", options: optionSets.appearanceFeel }],
@@ -145,8 +146,8 @@ const selfToIdealField = {
   tempo: "idealTempo",
   intimacy: "idealIntimacy",
   intimacyTiming: "idealIntimacyTiming",
+  socialBoundary: "idealSocialBoundary",
   selfWeekends: "idealWeekends",
-  selfValues: "idealValues",
   selfStyle: "idealStyle",
   appearanceFeel: "idealAppearanceFeel",
   hair: "idealHair",
@@ -170,6 +171,13 @@ const $$ = selector => Array.from(document.querySelectorAll(selector));
 function formatDateTime(value) {
   if (!value) return "待定";
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatDateOnly(value) {
+  if (!value) return "待定";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "待定";
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 async function api(path, options = {}) {
@@ -217,11 +225,55 @@ function hasAuthToken() {
 }
 
 function schedulePhrase(frequency) {
-  if (!frequency) return "提交问卷后生成";
-  const days = Number(frequency.referenceDays);
-  if (Number.isFinite(days) && days <= 0) return "当前可参与下一轮分配";
-  if (Number.isFinite(days)) return `约 ${days} 天后`;
-  return `约 ${frequency.intervalDays || state.round?.intervalDays || 3} 天`;
+  return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
+}
+
+function percentText(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0%";
+  return `${Math.round(Math.max(0, Math.min(1, number)) * 100)}%`;
+}
+
+function weightText(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function requiredCompletionRatio(source = {}) {
+  const checks = [
+    Boolean(source.displayName),
+    Boolean(source.gender),
+    hasSelection(source.seeking),
+    Boolean(source.birthYear || source.age),
+    Boolean(source.identity || source.stage),
+    source.schoolType === "北京大学",
+    Boolean(hasSelection(source.location) || source.city),
+    Boolean(source.intent),
+    Boolean(source.tempo),
+    valueInOptions(source.intimacy, optionSets.intimacy),
+    listInOptions(source.idealIntimacy, optionSets.intimacy),
+    valueInOptions(source.intimacyTiming, optionSets.intimacyTiming),
+    listInOptions(source.idealIntimacyTiming, optionSets.intimacyTiming),
+    valueInOptions(source.socialBoundary, optionSets.socialBoundaries),
+    listInOptions(source.idealSocialBoundary, optionSets.socialBoundaries),
+    Number.isInteger(source.selfMetrics?.marriage),
+    Number.isInteger(source.idealMetrics?.marriage),
+    Number.isInteger(source.selfMetrics?.fertility),
+    Number.isInteger(source.idealMetrics?.fertility),
+    Boolean(source.contactValue),
+    source.consent === true
+  ];
+  return checks.filter(Boolean).length / checks.length;
+}
+
+function profileMetricLine(frequency) {
+  const completenessRatio = Number.isFinite(Number(frequency?.completenessRatio))
+    ? Number(frequency.completenessRatio)
+    : requiredCompletionRatio(state.profile || state.selected);
+  const precisionRatio = Number.isFinite(Number(frequency?.clarityRatio)) ? Number(frequency.clarityRatio) : completenessRatio;
+  const personalWeight = weightText(frequency?.personalWeight);
+  return `目前问卷完整度：${percentText(completenessRatio)} 问卷精准度：${percentText(precisionRatio)}，个人权重分：${personalWeight}`;
 }
 
 function renderPersonalSchedule() {
@@ -230,14 +282,11 @@ function renderPersonalSchedule() {
   const interval = frequency?.intervalDays || state.round?.intervalDays || state.round?.settings?.matchIntervalDays || 3;
   if (el) {
     if (frequency) {
-      const days = Number(frequency.referenceDays);
-      el.innerHTML = Number.isFinite(days) && days <= 0
-        ? `<span><strong>可参与</strong><small>下一轮</small></span>`
-        : `<span><strong>${Number.isFinite(days) ? days : interval}</strong><small>天左右</small></span>`;
+      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong><small>预计下次匹配</small></span>`;
     } else if (hasAuthToken()) {
       el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
     } else {
-      el.innerHTML = `<span><strong>${interval}</strong><small>天参考</small></span>`;
+      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(state.round?.closesAt || new Date()))}</strong><small>轮次参考</small></span>`;
     }
   }
   const note = $("[data-round-note]");
@@ -246,11 +295,12 @@ function renderPersonalSchedule() {
   }
   const closeTime = $("[data-close-time]");
   if (closeTime) {
-    const expected = frequency?.expectedNextAllocationAt ? `（${formatDateTime(frequency.expectedNextAllocationAt)}）` : "";
     closeTime.textContent = frequency
-      ? `个人下次分配参考：${schedulePhrase(frequency)}${expected}`
+      ? `个人下次分配参考：${formatDateOnly(frequency.expectedNextAllocationAt)}`
       : "个人下次分配参考：提交问卷后生成";
   }
+  const resultTime = $("[data-result-time]");
+  if (resultTime) resultTime.textContent = profileMetricLine(frequency);
   const matchFrequency = $("[data-match-frequency]");
   if (matchFrequency) {
     matchFrequency.textContent = frequency
@@ -298,9 +348,9 @@ function renderRound(payload) {
   $("[data-round-note]").textContent = `原则上每 ${interval} 天匹配一次，具体会随画像分布浮动`;
   $("[data-round-id]").textContent = payload.round.id;
   $("[data-participants]").textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
-  $("[data-dashboard-title]").textContent = `${payload.round.id} 画像池更新中`;
-  $("[data-close-time]").textContent = `下次匹配参考：${formatDateTime(payload.round.closesAt)}`;
-  $("[data-result-time]").textContent = "发布：管理员审核后可见";
+  $("[data-dashboard-title]").textContent = `${formatDateOnly(new Date())} 画像池更新中`;
+  $("[data-close-time]").textContent = `个人下次分配参考：${formatDateOnly(payload.round.closesAt)}`;
+  $("[data-result-time]").textContent = profileMetricLine(state.profile?.matchFrequency);
   const frequency = $("[data-match-frequency]");
   if (frequency) frequency.textContent = `原则上每 ${interval} 天一次`;
   const matchNote = $("[data-match-note]");
@@ -714,7 +764,9 @@ function intimacyAnswersCurrent(source) {
   return valueInOptions(source?.intimacy, optionSets.intimacy)
     && listInOptions(source?.idealIntimacy, optionSets.intimacy)
     && valueInOptions(source?.intimacyTiming, optionSets.intimacyTiming)
-    && listInOptions(source?.idealIntimacyTiming, optionSets.intimacyTiming);
+    && listInOptions(source?.idealIntimacyTiming, optionSets.intimacyTiming)
+    && valueInOptions(source?.socialBoundary, optionSets.socialBoundaries)
+    && listInOptions(source?.idealSocialBoundary, optionSets.socialBoundaries);
 }
 
 function needsSurveySupplement(profile) {
@@ -775,6 +827,8 @@ function cleanProfileFieldValue(key, value) {
   if (key === "idealIntimacy") return Array.isArray(value) ? value.filter(item => optionSets.intimacy.includes(item)) : [];
   if (key === "intimacyTiming") return valueInOptions(value, optionSets.intimacyTiming) ? value : "";
   if (key === "idealIntimacyTiming") return Array.isArray(value) ? value.filter(item => optionSets.intimacyTiming.includes(item)) : [];
+  if (key === "socialBoundary") return valueInOptions(value, optionSets.socialBoundaries) ? value : "";
+  if (key === "idealSocialBoundary") return Array.isArray(value) ? value.filter(item => optionSets.socialBoundaries.includes(item)) : [];
   return value;
 }
 
@@ -788,8 +842,8 @@ function fillForm(profile) {
     "displayName", "gender", "birthYear", "identity", "schoolType", "location", "discipline", "seeking",
     "idealBirthYearMin", "idealBirthYearMax", "idealIdentities", "idealLocations", "hometownProvince", "idealHometownRegions",
     "homeArea", "idealHomeAreas", "idealDisciplines", "intent", "idealIntent", "tempo", "idealTempo",
-    "intimacy", "idealIntimacy", "intimacyTiming", "idealIntimacyTiming",
-    "mbti", "mbtiMetrics", "idealMbtiMetrics", "selfMetrics", "idealMetrics", "selfWeekends", "idealWeekends", "selfValues", "idealValues",
+    "intimacy", "idealIntimacy", "intimacyTiming", "idealIntimacyTiming", "socialBoundary", "idealSocialBoundary",
+    "mbti", "mbtiMetrics", "idealMbtiMetrics", "selfMetrics", "idealMetrics", "selfWeekends", "idealWeekends",
     "dietaryPreferences", "monthlyExpense",
     "sportsInterests", "musicInterests", "movieInterests", "travelInterests", "readingInterests", "skillInterests", "gameInterests", "otherInterests", "otherInterestText",
     "selfStyle", "idealStyle", "height", "idealHeight", "appearanceFeel", "idealAppearanceFeel", "hair", "idealHair", "glasses", "idealGlasses"
@@ -804,7 +858,7 @@ function fillForm(profile) {
   const message = $("[data-form-message]");
   if (message) {
     message.textContent = supplementNeeded
-      ? "亲密关系题目已更新，请在第二卷补充这两题后重新提交。其他已填写内容已为你保留。"
+      ? `问卷题目已更新，请补充第 ${supplementNeeded.join("、")} 卷后重新提交。其他已填写内容已为你保留。`
       : "";
   }
   renderSurveyPage();

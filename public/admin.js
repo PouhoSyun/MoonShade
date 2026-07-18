@@ -71,13 +71,18 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function formatDateOnly(value) {
+  if (!value) return "暂无";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
+}
+
 function scheduleText(frequency) {
   if (!frequency) return "暂无";
-  const days = Number(frequency.referenceDays);
-  const phrase = Number.isFinite(days) && days <= 0
-    ? "当前可分配"
-    : `约 ${Number.isFinite(days) ? days : frequency.intervalDays || 3} 天后`;
-  return `${phrase} · ${formatDateTime(frequency.expectedNextAllocationAt)}`;
+  return formatDateOnly(frequency.expectedNextAllocationAt);
 }
 
 function frequencyText(frequency) {
@@ -92,8 +97,14 @@ function studentIdFromEmail(email) {
   return String(email || "").match(/^(\d{10})@/)?.[1] || "-";
 }
 
+function formatWeight(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function personalWeightValue(frequency) {
-  return frequency?.personalWeight ?? frequency?.priority ?? 0;
+  return formatWeight(frequency?.personalWeight ?? frequency?.priority ?? 0);
 }
 
 function lastMatchText(frequency) {
@@ -102,9 +113,9 @@ function lastMatchText(frequency) {
 }
 
 function weightText(frequency) {
-  if (!frequency) return "时间 0 / 画像 0 / 个人 0";
+  if (!frequency) return "完整 0 / 精确 0 / 空窗 0 / 性别 0 / 稀缺 0 / 个人 0";
   const clarityPercent = Number.isFinite(Number(frequency.clarityRatio)) ? Math.round(Number(frequency.clarityRatio) * 100) : 0;
-  return `时间 ${frequency.timeWeight ?? 0} · 画像 ${frequency.clarityWeight ?? 0}（${clarityPercent}%）· 个人 ${frequency.personalWeight ?? frequency.priority ?? 0} · 性别序 ${frequency.genderRank || "-"}`;
+  return `完整 ${formatWeight(frequency.completenessCoefficient)} · 精确 ${formatWeight(frequency.precisionCoefficient)} · 空窗 ${formatWeight(frequency.gapCoefficient)} · 性别 ${formatWeight(frequency.genderRatioCoefficient)} · 稀缺 ${formatWeight(frequency.scarcityCoefficient)} · 个人 ${personalWeightValue(frequency)} · 精准 ${clarityPercent}% · 性别序 ${frequency.genderRank || "-"}`;
 }
 
 function renderBoundaryWarnings(warnings = []) {
@@ -431,6 +442,8 @@ function renderProfileDetail() {
       ["可接受亲密边界", profile.idealIntimacy],
       ["亲密关系发生时间", profile.intimacyTiming],
       ["可接受发生时间", profile.idealIntimacyTiming],
+      ["恋爱后交际圈边界", profile.socialBoundary],
+      ["可接受对方交际圈边界", profile.idealSocialBoundary],
       ["饮食口味喜好", profile.dietaryPreferences],
       ["参考月生活开支", profile.monthlyExpense ? `${profile.monthlyExpense} 元/月` : ""],
       ["MBTI 四维", profile.mbtiMetrics],
@@ -441,8 +454,6 @@ function renderProfileDetail() {
     ${detailBlock("内外特征", [
       ["周末场景", profile.selfWeekends],
       ["希望对方喜欢", profile.idealWeekends],
-      ["关系里会带来的东西", profile.selfValues],
-      ["希望对方重视", profile.idealValues],
       ["穿着气质", profile.selfStyle],
       ["吸引自己的穿着气质", profile.idealStyle],
       ["身高", profile.height ? `${profile.height} cm` : ""],
@@ -472,11 +483,15 @@ function renderProfileDetail() {
     ])}
     ${detailBlock("匹配权重", [
       ["权重标签", profile.matchFrequency?.label],
-      ["时间权重", profile.matchFrequency?.timeWeight],
-      ["画像清晰权重", profile.matchFrequency?.clarityWeight],
-      ["个人权重", profile.matchFrequency?.personalWeight],
+      ["完整度系数", formatWeight(profile.matchFrequency?.completenessCoefficient)],
+      ["精确度系数", formatWeight(profile.matchFrequency?.precisionCoefficient)],
+      ["空窗期系数", formatWeight(profile.matchFrequency?.gapCoefficient)],
+      ["性别比例系数", formatWeight(profile.matchFrequency?.genderRatioCoefficient)],
+      ["稀缺度系数", formatWeight(profile.matchFrequency?.scarcityCoefficient)],
+      ["个人权重", personalWeightValue(profile.matchFrequency)],
       ["同性别排序", profile.matchFrequency?.genderRank],
       ["画像清晰度", profile.matchFrequency?.clarityRatio ? `${Math.round(profile.matchFrequency.clarityRatio * 100)}%（${profile.matchFrequency.clarityFilled}/${profile.matchFrequency.clarityTotal}）` : ""],
+      ["问卷完整度", profile.matchFrequency?.completenessRatio ? `${Math.round(profile.matchFrequency.completenessRatio * 100)}%（${profile.matchFrequency.completenessFilled}/${profile.matchFrequency.completenessTotal}）` : ""],
       ["距上次成功匹配", profile.matchFrequency?.daysSinceLastMatch === null || profile.matchFrequency?.daysSinceLastMatch === undefined ? "暂无成功匹配" : `${profile.matchFrequency.daysSinceLastMatch} 天`],
       ["上次成功匹配时间", formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt)],
       ["预计下次分配时间", scheduleText(profile.matchFrequency)],
@@ -517,6 +532,41 @@ function locationAccepted(actualLocation, idealLocations) {
   return actual.some(item => ideal.includes(item));
 }
 
+const provinceRegions = {
+  华北: ["北京", "天津", "河北", "山西", "内蒙古"],
+  东北: ["辽宁", "吉林", "黑龙江"],
+  华东: ["上海", "江苏", "浙江", "安徽", "福建", "江西", "山东"],
+  华中: ["河南", "湖北", "湖南"],
+  华南: ["广东", "广西", "海南"],
+  西南: ["重庆", "四川", "贵州", "云南", "西藏"],
+  西北: ["陕西", "甘肃", "青海", "宁夏", "新疆"],
+  港澳台: ["香港", "澳门", "台湾"]
+};
+
+function regionForProvince(province) {
+  return Object.entries(provinceRegions).find(([, provinces]) => provinces.includes(province))?.[0] || "";
+}
+
+function acceptableHit(actualValue, acceptableValues) {
+  const actual = asList(actualValue);
+  const acceptable = asList(acceptableValues);
+  if (!actual.length || !acceptable.length || acceptable.includes("不限")) return true;
+  return actual.some(item => acceptable.includes(item));
+}
+
+function firstVolumeCompatible(left, right) {
+  return acceptableHit(right.identity || right.stage, left.idealIdentities)
+    && acceptableHit(left.identity || left.stage, right.idealIdentities)
+    && acceptableHit(right.schoolType, left.idealSchoolTypes)
+    && acceptableHit(left.schoolType, right.idealSchoolTypes)
+    && acceptableHit(regionForProvince(right.hometownProvince), left.idealHometownRegions)
+    && acceptableHit(regionForProvince(left.hometownProvince), right.idealHometownRegions)
+    && acceptableHit(right.homeArea, left.idealHomeAreas)
+    && acceptableHit(left.homeArea, right.idealHomeAreas)
+    && acceptableHit(right.discipline || right.department, left.idealDisciplines)
+    && acceptableHit(left.discipline || left.department, right.idealDisciplines);
+}
+
 function hardCompatible(left, right) {
   if (!left || !right || left.id === right.id) return false;
   const leftSeeking = asList(left.seeking);
@@ -535,7 +585,7 @@ function hardCompatible(left, right) {
     && (!rightHasRange || !leftYear || yearInRange(leftYear, rightMin, rightMax));
   const locationOk = locationAccepted(right.location || right.city, left.idealLocations)
     && locationAccepted(left.location || left.city, right.idealLocations);
-  return genderOk && ageOk && locationOk;
+  return genderOk && ageOk && locationOk && firstVolumeCompatible(left, right);
 }
 
 function compatibleProfileOptions(selectedId, counterpartId) {
@@ -556,9 +606,11 @@ function renderMatchDiagnostics(match) {
       <div class="match-frequency-notes">
         ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：个人 ${escapeHtml(personalWeightValue(match.left.matchFrequency))}</span>` : ""}
         ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：个人 ${escapeHtml(personalWeightValue(match.right.matchFrequency))}</span>` : ""}
-        <span>交叉 ${escapeHtml(match.crossWeight ?? match.score)}</span>
-        ${match.rawScore !== undefined ? `<span>原始相似分：${escapeHtml(match.rawScore)} / ${escapeHtml(match.maxScore || 240)}</span>` : ""}
-        ${match.weightBreakdown ? `<span>重复降权：${escapeHtml(match.weightBreakdown.repeatPenalty || 0)}</span>` : ""}
+        <span>个人乘积 ${escapeHtml(formatWeight(match.personalWeight))}</span>
+        <span>布尔门槛 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))}</span>
+        <span>取向权重 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</span>
+        <span>交叉权重 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))}</span>
+        ${match.weightBreakdown ? `<span>重复降权系数：${escapeHtml(formatWeight(match.weightBreakdown.repeatFactor ?? 1))}</span>` : ""}
       </div>
     </div>
   `;
@@ -592,8 +644,8 @@ async function previewMatch(card) {
       })
     });
     const preview = payload.preview;
-    card.querySelector(".match-admin-head strong").textContent = `最终权重 ${preview.adjustedScore ?? preview.weightBreakdown?.finalWeight ?? preview.score}`;
-    card.querySelector(".match-admin-head small").textContent = `交叉 ${preview.crossWeight ?? preview.score} · 双方个人 ${preview.personalWeight ?? ""} · 原始 ${preview.rawScore}/${preview.maxScore || 240}`;
+    card.querySelector(".match-admin-head strong").textContent = `最终权重 ${formatWeight(preview.adjustedScore ?? preview.weightBreakdown?.finalWeight ?? preview.score)}`;
+    card.querySelector(".match-admin-head small").textContent = `交叉 ${formatWeight(preview.crossWeight ?? preview.score)} · 个人乘积 ${formatWeight(preview.personalWeight)} · 布尔 ${formatWeight(preview.booleanGate)} · 取向 ${formatWeight(preview.orientationWeight)}`;
     if (diagnostics) diagnostics.outerHTML = renderMatchDiagnostics(preview);
   } catch (error) {
     if (diagnostics) diagnostics.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
@@ -610,8 +662,8 @@ function renderMatches() {
   editor.innerHTML = matches.map(match => `
     <article class="admin-match" data-match-id="${match.id}">
       <div class="match-admin-head">
-        <strong>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)}</strong>
-        <small>交叉 ${escapeHtml(match.crossWeight ?? match.score)} · 双方个人 ${escapeHtml(match.personalWeight ?? "")}${match.rawScore !== undefined ? ` · 原始 ${escapeHtml(match.rawScore)}/${escapeHtml(match.maxScore || 240)}` : ""}</small>
+        <strong>最终权重 ${escapeHtml(formatWeight(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score))}</strong>
+        <small>交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · 个人乘积 ${escapeHtml(formatWeight(match.personalWeight))} · 布尔 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))} · 取向 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</small>
         <span>${escapeHtml(statusLabel(match.status))}</span>
         ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
@@ -647,7 +699,7 @@ function renderPublishedMatches() {
     <article class="admin-match published-match" data-match-id="${match.id}">
       <div class="match-admin-head">
         <strong>${escapeHtml(match.left?.displayName || "Moon")} × ${escapeHtml(match.right?.displayName || "Shade")}</strong>
-        <small>最终权重 ${escapeHtml(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score)} · 交叉 ${escapeHtml(match.crossWeight ?? match.score)} · ${escapeHtml(formatDateTime(match.publishedAt || match.updatedAt))}</small>
+        <small>最终权重 ${escapeHtml(formatWeight(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score))} · 交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · ${escapeHtml(formatDateTime(match.publishedAt || match.updatedAt))}</small>
         <span>${escapeHtml(statusLabel(match.status))}</span>
       </div>
       <label>Moon

@@ -449,6 +449,7 @@ function cleanAnnouncement(input = {}, existing = {}) {
 
 const currentIntimacyOptions = ["开放态度", "关系决定", "暂无打算", "柏拉图式"];
 const currentIntimacyTimingOptions = ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"];
+const currentSocialBoundaryOptions = ["开放性", "保持现状", "排他性"];
 const interestFieldNames = ["sportsInterests", "musicInterests", "movieInterests", "travelInterests", "readingInterests", "skillInterests", "gameInterests", "otherInterests"];
 
 function hasCurrentOption(value, allowed) {
@@ -548,16 +549,18 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     idealIntimacy: cleanList(input.idealIntimacy, currentIntimacyOptions),
     intimacyTiming: currentIntimacyTimingOptions.includes(input.intimacyTiming) ? input.intimacyTiming : "",
     idealIntimacyTiming: cleanList(input.idealIntimacyTiming, currentIntimacyTimingOptions),
+    socialBoundary: currentSocialBoundaryOptions.includes(input.socialBoundary) ? input.socialBoundary : (existing.socialBoundary || ""),
+    idealSocialBoundary: cleanList(input.idealSocialBoundary || existing.idealSocialBoundary, currentSocialBoundaryOptions),
     weekend: cleanList(input.weekend || input.selfWeekends, allowedWeekend),
     dietaryPreferences: cleanList(input.dietaryPreferences, allowedDietaryPreferences),
     monthlyExpense: cleanMonthlyExpense(input.monthlyExpense),
     ...Object.fromEntries(interestFieldNames.map(field => [field, cleanInterestList(input[field])])),
     otherInterestText: cleanText(input.otherInterestText, 300),
-    values: cleanList(input.values || input.selfValues, allowedValues),
+    values: cleanList(input.values || input.selfValues || existing.values || existing.selfValues, allowedValues),
     selfWeekends: cleanList(input.selfWeekends || input.weekend, allowedWeekend),
     idealWeekends: cleanList(input.idealWeekends, allowedWeekend),
-    selfValues: cleanList(input.selfValues || input.values, allowedValues),
-    idealValues: cleanList(input.idealValues, allowedValues),
+    selfValues: cleanList(input.selfValues || input.values || existing.selfValues || existing.values, allowedValues),
+    idealValues: cleanList(input.idealValues || existing.idealValues, allowedValues),
     selfStyle: cleanList(input.selfStyle, allowedStyle),
     idealStyle: cleanList(input.idealStyle, allowedStyle),
     hair: allowedHair.includes(input.hair) ? input.hair : "",
@@ -597,6 +600,8 @@ function validateProfile(profile) {
   if (!hasCurrentOptionList(profile.idealIntimacy, currentIntimacyOptions)) missing.push("希望对方的边界");
   if (!hasCurrentOption(profile.intimacyTiming, currentIntimacyTimingOptions)) missing.push("对亲密关系态度");
   if (!hasCurrentOptionList(profile.idealIntimacyTiming, currentIntimacyTimingOptions)) missing.push("可接受发生时间");
+  if (!hasCurrentOption(profile.socialBoundary, currentSocialBoundaryOptions)) missing.push("恋爱后交际圈边界");
+  if (!hasCurrentOptionList(profile.idealSocialBoundary, currentSocialBoundaryOptions)) missing.push("可接受对方交际圈边界");
   if (!Number.isInteger(profile.selfMetrics?.marriage)) missing.push("我的婚姻意向");
   if (!Number.isInteger(profile.idealMetrics?.marriage)) missing.push("期待对方的婚姻意向");
   if (!Number.isInteger(profile.selfMetrics?.fertility)) missing.push("我的生育意向");
@@ -604,6 +609,133 @@ function validateProfile(profile) {
   if (!profile.contactValue) missing.push("联系方式");
   if (!profile.consent) missing.push("授权参与本轮匹配");
   return missing;
+}
+
+function profileCompleteness(profile) {
+  const checks = [
+    Boolean(profile.displayName),
+    Boolean(profile.gender),
+    profile.seeking?.length > 0,
+    Boolean(profile.birthYear || profile.age),
+    Boolean(profile.identity || profile.stage),
+    profile.schoolType === "北京大学",
+    Boolean(profile.location?.length || profile.city),
+    Boolean(profile.intent),
+    Boolean(profile.tempo),
+    hasCurrentOption(profile.intimacy, currentIntimacyOptions),
+    hasCurrentOptionList(profile.idealIntimacy, currentIntimacyOptions),
+    hasCurrentOption(profile.intimacyTiming, currentIntimacyTimingOptions),
+    hasCurrentOptionList(profile.idealIntimacyTiming, currentIntimacyTimingOptions),
+    hasCurrentOption(profile.socialBoundary, currentSocialBoundaryOptions),
+    hasCurrentOptionList(profile.idealSocialBoundary, currentSocialBoundaryOptions),
+    Number.isInteger(profile.selfMetrics?.marriage),
+    Number.isInteger(profile.idealMetrics?.marriage),
+    Number.isInteger(profile.selfMetrics?.fertility),
+    Number.isInteger(profile.idealMetrics?.fertility),
+    Boolean(profile.contactValue),
+    profile.consent === true
+  ];
+  const filled = checks.filter(Boolean).length;
+  return {
+    filled,
+    total: checks.length,
+    ratio: checks.length ? filled / checks.length : 0
+  };
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundWeight(value, digits = 3) {
+  const factor = 10 ** digits;
+  return Math.round(Number(value || 0) * factor) / factor;
+}
+
+function remapCoefficient(value) {
+  const x = clampNumber(Number(value) || 0, 0, 1);
+  return roundWeight(-x * x + 2 * x);
+}
+
+const precisionMultiselectFields = [
+  { key: "seeking", total: 4 },
+  { key: "location", total: 15 },
+  { key: "idealIntimacy", total: currentIntimacyOptions.length },
+  { key: "idealIntimacyTiming", total: currentIntimacyTimingOptions.length },
+  { key: "idealSocialBoundary", total: currentSocialBoundaryOptions.length }
+];
+
+const scarcitySingleFields = [
+  "identity",
+  "hometownProvince",
+  "homeArea",
+  "discipline",
+  "intent",
+  "tempo",
+  "intimacy",
+  "intimacyTiming",
+  "socialBoundary"
+];
+
+function precisionCoefficient(profile) {
+  const scores = precisionMultiselectFields.map(({ key, total }) => {
+    const count = asList(profile[key]).length;
+    if (!count || !total) return 0;
+    const share = Math.min(count / total, 1 / 3);
+    return 1 - share;
+  });
+  const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
+  return remapCoefficient(average);
+}
+
+function gapCoefficient(daysSince) {
+  if (daysSince !== null && daysSince !== undefined && daysSince <= 2) return 0;
+  const effectiveDays = daysSince === null || daysSince === undefined ? 7 : clampNumber(daysSince, 3, 7);
+  return roundWeight(1.15 ** (effectiveDays - 3));
+}
+
+function genderRatioCoefficient(profile, profiles = []) {
+  const same = profiles.filter(item => item.gender && item.gender === profile.gender).length;
+  const compatible = profiles.filter(item => item.id !== profile.id && genderCompatible(profile, item)).length;
+  if (!same || !compatible) return 1;
+  return roundWeight(clampNumber(compatible / same, 0.55, 1.8));
+}
+
+function scarcityCoefficient(profile, profiles = []) {
+  const scores = scarcitySingleFields.map(field => {
+    const value = profile[field];
+    const answered = profiles.filter(item => item[field]).length;
+    if (!value || !answered) return null;
+    const same = profiles.filter(item => item[field] === value).length;
+    return 1 - same / answered;
+  }).filter(value => value !== null);
+  const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
+  return remapCoefficient(average);
+}
+
+function profileWeightFactors(profile, profiles, history, now = Date.now()) {
+  const lastAt = history.lastMatchedAt.get(profile.id) || 0;
+  const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
+  const completeness = profileCompleteness(profile);
+  const clarity = profileClarity(profile);
+  const completenessCoefficient = remapCoefficient(completeness.ratio);
+  const precision = precisionCoefficient(profile);
+  const gap = gapCoefficient(daysSince);
+  const genderRatio = genderRatioCoefficient(profile, profiles);
+  const scarcity = scarcityCoefficient(profile, profiles);
+  const personalWeight = roundWeight(completenessCoefficient * precision * gap * genderRatio * scarcity);
+  return {
+    daysSince,
+    lastAt,
+    completeness,
+    clarity,
+    completenessCoefficient,
+    precisionCoefficient: precision,
+    gapCoefficient: gap,
+    genderRatioCoefficient: genderRatio,
+    scarcityCoefficient: scarcity,
+    personalWeight
+  };
 }
 
 function publicProfile(profile, context = {}) {
@@ -631,6 +763,8 @@ function publicProfile(profile, context = {}) {
     tempo: profile.tempo,
     intimacy: profile.intimacy,
     intimacyTiming: profile.intimacyTiming,
+    socialBoundary: profile.socialBoundary,
+    idealSocialBoundary: profile.idealSocialBoundary,
     weekend: profile.weekend,
     dietaryPreferences: profile.dietaryPreferences,
     monthlyExpense: profile.monthlyExpense,
@@ -665,6 +799,14 @@ function publicProfile(profile, context = {}) {
       clarityRatio: frequency.clarityRatio,
       clarityFilled: frequency.clarityFilled,
       clarityTotal: frequency.clarityTotal,
+      completenessRatio: frequency.completenessRatio,
+      completenessFilled: frequency.completenessFilled,
+      completenessTotal: frequency.completenessTotal,
+      completenessCoefficient: frequency.completenessCoefficient,
+      precisionCoefficient: frequency.precisionCoefficient,
+      gapCoefficient: frequency.gapCoefficient,
+      genderRatioCoefficient: frequency.genderRatioCoefficient,
+      scarcityCoefficient: frequency.scarcityCoefficient,
       personalWeight: frequency.personalWeight,
       genderRank: frequency.genderRank,
       priority: frequency.priority,
@@ -826,8 +968,8 @@ function matchBoundaryWarnings(a, b) {
     ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department]
   ];
   for (const [field, label, actualLabel, idealKey, actualGetter] of firstVolumeChecks) {
-    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
-    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+    addAcceptableWarning(warnings, a, b, { field, strict: true, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
+    addAcceptableWarning(warnings, b, a, { field, strict: true, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
   }
 
   const otherAcceptableChecks = [
@@ -835,8 +977,8 @@ function matchBoundaryWarnings(a, b) {
     ["tempo", "沟通节奏", "沟通节奏", "idealTempo", profile => profile.tempo],
     ["intimacy", "亲密边界", "亲密边界", "idealIntimacy", profile => profile.intimacy],
     ["intimacyTiming", "亲密关系发生时间", "亲密关系发生时间", "idealIntimacyTiming", profile => profile.intimacyTiming],
+    ["socialBoundary", "恋爱后交际圈边界", "交际圈边界", "idealSocialBoundary", profile => profile.socialBoundary],
     ["weekend", "周末偏好", "周末偏好", "idealWeekends", profile => profile.selfWeekends || profile.weekend],
-    ["values", "关系价值观", "关系价值观", "idealValues", profile => profile.selfValues || profile.values],
     ["style", "穿着气质", "穿着气质", "idealStyle", profile => profile.selfStyle],
     ["appearanceFeel", "外在年龄感", "外在年龄感", "idealAppearanceFeel", profile => profile.appearanceFeel],
     ["hair", "头发长度", "头发长度", "idealHair", profile => profile.hair],
@@ -951,13 +1093,13 @@ function profileClarity(profile) {
     profile.tempo,
     profile.intimacy,
     profile.intimacyTiming,
+    profile.socialBoundary,
     profile.dietaryPreferences,
     profile.monthlyExpense,
     ...interestFieldNames.map(field => profile[field]),
     profile.otherInterestText,
     profile.mbtiMetrics,
     profile.selfWeekends,
-    profile.selfValues,
     profile.selfStyle,
     profile.height,
     profile.appearanceFeel,
@@ -973,9 +1115,9 @@ function profileClarity(profile) {
     profile.idealTempo,
     profile.idealIntimacy,
     profile.idealIntimacyTiming,
+    profile.idealSocialBoundary,
     profile.idealMbtiMetrics,
     profile.idealWeekends,
-    profile.idealValues,
     profile.idealStyle,
     profile.idealHeight,
     profile.idealAppearanceFeel,
@@ -1002,19 +1144,17 @@ function profileClarity(profile) {
 
 function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map()) {
   const interval = cleanSettings(settings).matchIntervalDays;
-  const lastAt = history.lastMatchedAt.get(profile.id) || 0;
-  const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
-  const timeWeight = daysSince === null ? 28 : Math.min(40, Math.max(0, daysSince) * 4);
-  const clarity = profileClarity(profile);
-  const personalWeight = timeWeight + clarity.clarityWeight;
+  const factors = profileWeightFactors(profile, profiles, history, now);
+  const { lastAt, daysSince, clarity, completeness, personalWeight } = factors;
   const referenceDays = daysSince === null ? 0 : Math.max(0, interval - daysSince);
   const nextEligibleAtMs = lastAt ? lastAt + interval * 86_400_000 : now;
   const eligible = nextEligibleAtMs <= now;
   const genderRank = genderRanks.get(profile.id) || null;
-  const label = personalWeight >= 58 ? "优先候选" : personalWeight >= 42 ? "标准候选" : "待补充画像";
+  const label = personalWeight >= 1.2 ? "优先候选" : personalWeight >= 0.7 ? "标准候选" : "待补充画像";
   const reason = [
     daysSince === null ? "尚无成功匹配记录" : `距上次成功匹配 ${daysSince} 天`,
-    `画像清晰度 ${Math.round(clarity.ratio * 100)}%`,
+    `问卷完整度 ${Math.round(completeness.ratio * 100)}%`,
+    `问卷精准度 ${Math.round(clarity.ratio * 100)}%`,
     genderRank ? `同性别排序第 ${genderRank}` : ""
   ].filter(Boolean).join("；");
   return {
@@ -1026,11 +1166,19 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
     nextEligibleAt: new Date(nextEligibleAtMs).toISOString(),
     referenceDays,
     eligible,
-    timeWeight,
-    clarityWeight: clarity.clarityWeight,
+    timeWeight: factors.gapCoefficient,
+    clarityWeight: factors.precisionCoefficient,
     clarityRatio: Number(clarity.ratio.toFixed(3)),
     clarityFilled: clarity.filled,
     clarityTotal: clarity.total,
+    completenessRatio: Number(completeness.ratio.toFixed(3)),
+    completenessFilled: completeness.filled,
+    completenessTotal: completeness.total,
+    completenessCoefficient: factors.completenessCoefficient,
+    precisionCoefficient: factors.precisionCoefficient,
+    gapCoefficient: factors.gapCoefficient,
+    genderRatioCoefficient: factors.genderRatioCoefficient,
+    scarcityCoefficient: factors.scarcityCoefficient,
     personalWeight,
     genderRank,
     priority: personalWeight,
@@ -1040,11 +1188,8 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
 
 function genderRanksFor(profiles, history, settings, now = Date.now()) {
   const preliminary = profiles.map(profile => {
-    const lastAt = history.lastMatchedAt.get(profile.id) || 0;
-    const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
-    const timeWeight = daysSince === null ? 28 : Math.min(40, Math.max(0, daysSince) * 4);
-    const clarityWeight = profileClarity(profile).clarityWeight;
-    return { id: profile.id, gender: profile.gender || "未填写", personalWeight: timeWeight + clarityWeight };
+    const factors = profileWeightFactors(profile, profiles, history, now);
+    return { id: profile.id, gender: profile.gender || "未填写", personalWeight: factors.personalWeight };
   });
   const ranks = new Map();
   for (const gender of [...new Set(preliminary.map(item => item.gender))]) {
@@ -1077,95 +1222,75 @@ function mbtiMetricScore(a, b) {
   return score;
 }
 
-function scorePair(a, b) {
-  if (a.id === b.id || !hardBoundaryCompatible(a, b)) return null;
+function boundaryGateForPair(a, b) {
+  const warnings = matchBoundaryWarnings(a, b);
+  if (warnings.some(item => item.strict)) {
+    return {
+      hardBlocked: true,
+      booleanGate: 0,
+      softViolationCount: warnings.filter(item => !item.strict).length,
+      warnings
+    };
+  }
+  const softViolationCount = warnings.filter(item => !item.strict).length;
+  return {
+    hardBlocked: false,
+    booleanGate: roundWeight(0.95 ** softViolationCount),
+    softViolationCount,
+    warnings
+  };
+}
 
-  const maxScore = 240;
-  let score = 30;
-  const reasons = [];
-  if (a.intent && b.intent && a.intent === b.intent) {
-    score += 6;
-    reasons.push(`都偏向「${a.intent}」`);
-  }
-  const intentScore = mutualPreferenceScore(a.intent, a.idealIntent, b.intent, b.idealIntent, 6);
-  if (intentScore) {
-    score += intentScore;
-    reasons.push("关系期待互相符合");
-  }
-  const tempoScore = mutualPreferenceScore(a.tempo, a.idealTempo, b.tempo, b.idealTempo, 5);
-  if (tempoScore) {
-    score += tempoScore;
-    reasons.push("沟通节奏互相接受");
-  }
-  const intimacyScore = mutualPreferenceScore(a.intimacy, a.idealIntimacy, b.intimacy, b.idealIntimacy, 4)
-    + mutualPreferenceScore(a.intimacyTiming, a.idealIntimacyTiming, b.intimacyTiming, b.idealIntimacyTiming, 3);
-  if (intimacyScore) {
-    score += intimacyScore;
-    reasons.push("亲密边界互相尊重");
-  }
-  const sharedLocation = Array.isArray(a.location) && Array.isArray(b.location)
-    ? a.location.some(item => b.location.includes(item))
-    : a.location && b.location && a.location === b.location;
-  if (sharedLocation || (a.city && b.city && a.city === b.city)) {
-    score += 8;
-    reasons.push(`常驻地相同`);
-  }
-  score += mutualPreferenceScore(a.identity || a.stage, a.idealIdentities, b.identity || b.stage, b.idealIdentities, 4);
-  score += mutualPreferenceScore(a.schoolType, a.idealSchoolTypes, b.schoolType, b.idealSchoolTypes, 3);
-  score += mutualPreferenceScoreAny(a.location || a.city, a.idealLocations, b.location || b.city, b.idealLocations, 4);
-  score += mutualPreferenceScore(regionForProvince(a.hometownProvince), a.idealHometownRegions, regionForProvince(b.hometownProvince), b.idealHometownRegions, 2);
-  score += mutualPreferenceScore(a.homeArea, a.idealHomeAreas, b.homeArea, b.idealHomeAreas, 2);
-  score += mutualPreferenceScore(a.discipline || a.department, a.idealDisciplines, b.discipline || b.department, b.idealDisciplines, 3);
-  if (a.school && b.school && a.school === b.school) {
-    score += 4;
-    reasons.push(`学校信息接近`);
-  }
-  const weekend = overlapScore(b.selfWeekends || b.weekend, a.idealWeekends || [], 3)
-    + overlapScore(a.selfWeekends || a.weekend, b.idealWeekends || [], 3)
-    + overlapScore(a.selfWeekends || a.weekend, b.selfWeekends || b.weekend, 2);
-  const values = overlapScore(b.selfValues || b.values, a.idealValues || [], 4)
-    + overlapScore(a.selfValues || a.values, b.idealValues || [], 4)
-    + overlapScore(a.selfValues || a.values, b.selfValues || b.values, 2);
-  score += weekend + values;
-  if (weekend) reasons.push(`周末偏好有交集`);
-  if (values) reasons.push(`关系价值观相似`);
-  const styleScore = overlapScore(b.selfStyle, a.idealStyle, 2) + overlapScore(a.selfStyle, b.idealStyle, 2);
-  if (styleScore) {
-    score += styleScore;
-    reasons.push("日常审美互相接受");
-  }
-  score += mutualPreferenceScore(a.hair, a.idealHair, b.hair, b.idealHair, 2);
-  score += mutualPreferenceScore(a.glasses, a.idealGlasses, b.glasses, b.idealGlasses, 1);
-  score += mutualPreferenceScore(a.appearanceFeel, a.idealAppearanceFeel, b.appearanceFeel, b.idealAppearanceFeel, 2);
-  const heightFit = heightScore(a, b);
-  if (heightFit) {
-    score += heightFit;
-    reasons.push("身高接近期待");
-  }
-  const metric = metricScore(a, b);
-  score += metric.score;
-  reasons.push(...metric.reasons);
-  const mbtiSliderScore = mbtiMetricScore(a, b);
-  if (mbtiSliderScore) {
-    score += mbtiSliderScore;
-    reasons.push("MBTI 四维倾向接近期待");
-  }
-  if (a.mbti && b.mbti && a.mbti[0] === b.mbti[0]) score += 2;
-  const aYear = a.birthYear || (a.age ? new Date().getFullYear() - a.age : null);
-  const bYear = b.birthYear || (b.age ? new Date().getFullYear() - b.age : null);
-  const yearRangeScore = mutualYearRangeScore(aYear, a.idealBirthYearMin, a.idealBirthYearMax, bYear, b.idealBirthYearMin, b.idealBirthYearMax);
-  if (yearRangeScore) {
-    score += yearRangeScore;
-    reasons.push("出生年落在期待范围");
-  }
-  if (aYear && bYear) score -= Math.min(8, Math.abs(aYear - bYear));
-  const rawScore = Math.max(0, Math.round(score));
-  const normalizedScore = Math.max(0, Math.min(100, Math.round((rawScore / maxScore) * 100)));
+function sharedInterestCount(a, b) {
+  return interestFieldNames.reduce((count, field) => {
+    const left = new Set(asList(a[field]));
+    return count + asList(b[field]).filter(item => left.has(item)).length;
+  }, 0);
+}
+
+function textTokens(value) {
+  return cleanText(value, 300)
+    .split(/[\s,，、;；.。!！?？/]+/)
+    .map(item => item.trim())
+    .filter(item => item.length >= 2);
+}
+
+function freeTextInterestHits(a, b) {
+  const left = new Set(textTokens(a.otherInterestText));
+  return textTokens(b.otherInterestText).filter(item => left.has(item)).length;
+}
+
+function orientationWeightForPair(a, b) {
+  const interestMatches = sharedInterestCount(a, b);
+  const interestBonus = Math.floor(Math.max(0, interestMatches - 7) / 2) * 0.1;
+  const freeTextHits = freeTextInterestHits(a, b);
+  const freeTextBonus = freeTextHits * 0.07;
+  return {
+    orientationWeight: roundWeight(1 + interestBonus + freeTextBonus),
+    interestMatches,
+    freeTextHits
+  };
+}
+
+function scorePair(a, b) {
+  if (a.id === b.id) return null;
+  const gate = boundaryGateForPair(a, b);
+  if (gate.hardBlocked) return null;
+  const orientation = orientationWeightForPair(a, b);
+  const basis = roundWeight(gate.booleanGate * orientation.orientationWeight);
+  const reasons = [
+    gate.softViolationCount ? `存在 ${gate.softViolationCount} 项软性违例` : "布尔门槛完全通过",
+    orientation.interestMatches >= 7 ? `共同兴趣 ${orientation.interestMatches} 项` : `共同兴趣 ${orientation.interestMatches} 项，未达到加权门槛`,
+    orientation.freeTextHits ? `未涉及爱好命中 ${orientation.freeTextHits} 项` : ""
+  ].filter(Boolean);
 
   return {
-    score: normalizedScore,
-    rawScore,
-    maxScore,
+    score: basis,
+    booleanGate: gate.booleanGate,
+    orientationWeight: orientation.orientationWeight,
+    interestMatchCount: orientation.interestMatches,
+    freeTextInterestHits: orientation.freeTextHits,
+    softViolationCount: gate.softViolationCount,
     reasons: reasons.slice(0, 4)
   };
 }
@@ -1183,7 +1308,7 @@ function bestMatchesFor(profile, profiles) {
       score: item.score,
       reasons: item.reasons,
       profile: publicProfile(item.profile),
-      contact: item.score >= 58 ? {
+      contact: item.score > 0 ? {
         type: item.profile.contactType,
         value: item.profile.contactValue
       } : null
@@ -1211,13 +1336,13 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       const key = pairKey(activePool[i].id, activePool[j].id);
       const repeatedCount = history.pairCounts.get(key) || 0;
       const lastRepeat = history.lastPartners.get(activePool[i].id) === activePool[j].id || history.lastPartners.get(activePool[j].id) === activePool[i].id;
-      const leftFrequency = frequencies.get(activePool[i].id) || { priority: 0 };
-      const rightFrequency = frequencies.get(activePool[j].id) || { priority: 0 };
-      const personalWeight = (leftFrequency.personalWeight || 0) + (rightFrequency.personalWeight || 0);
-      const crossWeight = scored.score;
-      const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
-      const adjustedScore = personalWeight + crossWeight - repeatPenalty;
-      candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, ...scored });
+      const leftFrequency = frequencies.get(activePool[i].id) || { personalWeight: 0 };
+      const rightFrequency = frequencies.get(activePool[j].id) || { personalWeight: 0 };
+      const personalWeight = roundWeight((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
+      const crossWeight = roundWeight(personalWeight * scored.booleanGate * scored.orientationWeight);
+      const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
+      const adjustedScore = roundWeight(crossWeight * repeatFactor);
+      candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
     }
   }
   candidates.sort((a, b) => b.adjustedScore - a.adjustedScore);
@@ -1233,38 +1358,51 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       roundId,
       batchId,
       generatedFor: today,
-      algorithmVersion: "daily-weight-v1",
+      algorithmVersion: "daily-weight-v2-doc",
       leftId: best.left.id,
       rightId: best.right.id,
-      score: best.score,
-      rawScore: best.rawScore,
-      maxScore: best.maxScore,
-      adjustedScore: Math.round(best.adjustedScore),
+      score: best.crossWeight,
+      adjustedScore: best.adjustedScore,
       crossWeight: best.crossWeight,
       personalWeight: best.personalWeight,
+      booleanGate: best.booleanGate,
+      orientationWeight: best.orientationWeight,
+      interestMatchCount: best.interestMatchCount,
+      freeTextInterestHits: best.freeTextInterestHits,
+      softViolationCount: best.softViolationCount,
       weightBreakdown: {
         left: {
-          timeWeight: leftFrequency?.timeWeight || 0,
-          clarityWeight: leftFrequency?.clarityWeight || 0,
+          completenessCoefficient: leftFrequency?.completenessCoefficient || 0,
+          precisionCoefficient: leftFrequency?.precisionCoefficient || 0,
+          gapCoefficient: leftFrequency?.gapCoefficient || 0,
+          genderRatioCoefficient: leftFrequency?.genderRatioCoefficient || 0,
+          scarcityCoefficient: leftFrequency?.scarcityCoefficient || 0,
           personalWeight: leftFrequency?.personalWeight || 0,
           genderRank: leftFrequency?.genderRank || null
         },
         right: {
-          timeWeight: rightFrequency?.timeWeight || 0,
-          clarityWeight: rightFrequency?.clarityWeight || 0,
+          completenessCoefficient: rightFrequency?.completenessCoefficient || 0,
+          precisionCoefficient: rightFrequency?.precisionCoefficient || 0,
+          gapCoefficient: rightFrequency?.gapCoefficient || 0,
+          genderRatioCoefficient: rightFrequency?.genderRatioCoefficient || 0,
+          scarcityCoefficient: rightFrequency?.scarcityCoefficient || 0,
           personalWeight: rightFrequency?.personalWeight || 0,
           genderRank: rightFrequency?.genderRank || null
         },
         crossWeight: best.crossWeight,
-        repeatPenalty: best.repeatedCount * 22 + (best.lastRepeat ? 34 : 0),
-        finalWeight: Math.round(best.adjustedScore)
+        booleanGate: best.booleanGate,
+        orientationWeight: best.orientationWeight,
+        repeatFactor: best.repeatFactor,
+        finalWeight: best.adjustedScore
       },
       reasons: [
         ...best.reasons,
-        `个人权重合计 ${Math.round(best.personalWeight)}`,
-        `交叉相似权重 ${Math.round(best.crossWeight)}`,
+        `个人权重乘积 ${best.personalWeight}`,
+        `布尔门槛 ${best.booleanGate}`,
+        `取向权重 ${best.orientationWeight}`,
+        `交叉权重 ${best.crossWeight}`,
         boundaryWarnings.length ? `存在 ${boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过",
-        best.lastRepeat ? "已对上次搭档重复作降权" : "已参考历史搭档避重"
+        best.repeatedCount ? `重复降权系数 ${best.repeatFactor}` : "无历史重复降权"
       ].slice(0, 8),
       status: "draft",
       notes: "",
@@ -1275,6 +1413,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
+    if (pairs.length >= 10) break;
   }
   return pairs;
 }
@@ -1282,7 +1421,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
 function ensureDailyDraftMatches(data) {
   const roundId = currentRound(new Date(), data.settings).id;
   const today = new Date().toISOString().slice(0, 10);
-  const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today);
+  const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === "daily-weight-v2-doc");
   if (hasTodayDraft) return false;
   const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
   data.matches = data.matches
@@ -1299,39 +1438,51 @@ function matchPreview(left, right, matches, settings) {
   const boundaryWarnings = matchBoundaryWarnings(left, right);
   const hardBlocked = boundaryWarnings.some(item => item.strict);
   const scored = hardBlocked ? null : scorePair(left, right);
-  const crossWeight = scored?.score || 0;
-  const personalWeight = (leftFrequency?.personalWeight || 0) + (rightFrequency?.personalWeight || 0);
+  const personalWeight = roundWeight((leftFrequency?.personalWeight || 0) * (rightFrequency?.personalWeight || 0));
+  const crossWeight = hardBlocked ? 0 : roundWeight(personalWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
   const key = pairKey(left.id, right.id);
   const history = matchHistory(matches);
   const repeatedCount = history.pairCounts.get(key) || 0;
   const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
-  const repeatPenalty = repeatedCount * 22 + (lastRepeat ? 34 : 0);
+  const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
+  const finalWeight = hardBlocked ? 0 : roundWeight(crossWeight * repeatFactor);
   return {
     hardBlocked,
     score: crossWeight,
-    rawScore: scored?.rawScore || 0,
-    maxScore: scored?.maxScore || 240,
     crossWeight,
     personalWeight,
-    adjustedScore: hardBlocked ? 0 : Math.round(personalWeight + crossWeight - repeatPenalty),
+    adjustedScore: finalWeight,
+    booleanGate: scored?.booleanGate || 0,
+    orientationWeight: scored?.orientationWeight || 0,
+    interestMatchCount: scored?.interestMatchCount || 0,
+    freeTextInterestHits: scored?.freeTextInterestHits || 0,
+    softViolationCount: scored?.softViolationCount || 0,
     reasons: scored?.reasons || [],
     boundaryWarnings,
     weightBreakdown: {
       left: {
-        timeWeight: leftFrequency?.timeWeight || 0,
-        clarityWeight: leftFrequency?.clarityWeight || 0,
+        completenessCoefficient: leftFrequency?.completenessCoefficient || 0,
+        precisionCoefficient: leftFrequency?.precisionCoefficient || 0,
+        gapCoefficient: leftFrequency?.gapCoefficient || 0,
+        genderRatioCoefficient: leftFrequency?.genderRatioCoefficient || 0,
+        scarcityCoefficient: leftFrequency?.scarcityCoefficient || 0,
         personalWeight: leftFrequency?.personalWeight || 0,
         genderRank: leftFrequency?.genderRank || null
       },
       right: {
-        timeWeight: rightFrequency?.timeWeight || 0,
-        clarityWeight: rightFrequency?.clarityWeight || 0,
+        completenessCoefficient: rightFrequency?.completenessCoefficient || 0,
+        precisionCoefficient: rightFrequency?.precisionCoefficient || 0,
+        gapCoefficient: rightFrequency?.gapCoefficient || 0,
+        genderRatioCoefficient: rightFrequency?.genderRatioCoefficient || 0,
+        scarcityCoefficient: rightFrequency?.scarcityCoefficient || 0,
         personalWeight: rightFrequency?.personalWeight || 0,
         genderRank: rightFrequency?.genderRank || null
       },
       crossWeight,
-      repeatPenalty,
-      finalWeight: hardBlocked ? 0 : Math.round(personalWeight + crossWeight - repeatPenalty)
+      booleanGate: scored?.booleanGate || 0,
+      orientationWeight: scored?.orientationWeight || 0,
+      repeatFactor,
+      finalWeight
     },
     left: publicProfile(left, { frequencyMap: frequencies }),
     right: publicProfile(right, { frequencyMap: frequencies })
@@ -1401,6 +1552,8 @@ function demoProfile(overrides) {
     idealIntimacy: overrides.idealIntimacy || ["开放态度", "关系决定"],
     intimacyTiming: overrides.intimacyTiming || "关系稳定后",
     idealIntimacyTiming: overrides.idealIntimacyTiming || ["婚后", "关系稳定后", "相熟数月后"],
+    socialBoundary: overrides.socialBoundary || "保持现状",
+    idealSocialBoundary: overrides.idealSocialBoundary || ["开放性", "保持现状"],
     weekend: overrides.selfWeekends,
     dietaryPreferences: overrides.dietaryPreferences || ["清淡"],
     monthlyExpense: overrides.monthlyExpense || 3000,
@@ -1764,8 +1917,8 @@ async function handleApi(req, res, url) {
       }
       if (preview) {
         match.score = preview.score;
-        match.rawScore = preview.rawScore;
-        match.maxScore = preview.maxScore;
+        delete match.rawScore;
+        delete match.maxScore;
         match.crossWeight = preview.crossWeight;
         match.personalWeight = preview.personalWeight;
         match.adjustedScore = preview.adjustedScore;
