@@ -73,11 +73,11 @@ function formatDateTime(value) {
 
 function formatDateOnly(value) {
   if (!value) return "暂无";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "暂无";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
 }
 
 function scheduleText(frequency) {
@@ -388,10 +388,17 @@ async function deleteAnnouncement(id) {
 
 function renderProfiles() {
   const table = $("[data-profile-table]");
+  const profiles = [...state.profiles].sort((a, b) => {
+    const weightDiff = Number(b.matchFrequency?.personalWeight || 0) - Number(a.matchFrequency?.personalWeight || 0);
+    if (Math.abs(weightDiff) > 0.0001) return weightDiff;
+    const aDays = a.matchFrequency?.daysSinceLastMatch ?? 9999;
+    const bDays = b.matchFrequency?.daysSinceLastMatch ?? 9999;
+    return bDays - aDays;
+  });
   table.innerHTML = `
     <thead><tr><th>学号</th><th>展示名</th><th>性别</th><th>个人权重</th><th>上次匹配</th><th>身份</th></tr></thead>
     <tbody>
-      ${state.profiles.map(profile => `
+      ${profiles.map(profile => `
         <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}" data-view-profile="${escapeHtml(profile.id)}">
           <td>${escapeHtml(studentIdFromEmail(profile.email))}</td>
           <td>${escapeHtml(profile.displayName)}</td>
@@ -589,9 +596,8 @@ function hardCompatible(left, right) {
 }
 
 function compatibleProfileOptions(selectedId, counterpartId) {
-  const counterpart = state.profiles.find(profile => profile.id === counterpartId);
   return state.profiles
-    .filter(profile => !counterpart || hardCompatible(profile, counterpart))
+    .filter(profile => profile.id !== counterpartId || profile.id === selectedId)
     .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
     .join("");
 }
@@ -656,7 +662,7 @@ function renderMatches() {
   const editor = $("[data-match-editor]");
   const matches = candidateMatches();
   if (!matches.length) {
-    editor.innerHTML = `<p class="empty-state">今天还没有可用候选匹配。人数不足或性别/偏好边界不兼容时可能为空。</p>`;
+    editor.innerHTML = `<p class="empty-state">今天还没有可用候选匹配。请确认至少有两位用户授权参与匹配。</p>`;
     return;
   }
   editor.innerHTML = matches.map(match => `

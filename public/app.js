@@ -177,7 +177,9 @@ function formatDateOnly(value) {
   if (!value) return "待定";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "待定";
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
 }
 
 async function api(path, options = {}) {
@@ -282,11 +284,11 @@ function renderPersonalSchedule() {
   const interval = frequency?.intervalDays || state.round?.intervalDays || state.round?.settings?.matchIntervalDays || 3;
   if (el) {
     if (frequency) {
-      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong><small>预计下次匹配</small></span>`;
+      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong></span>`;
     } else if (hasAuthToken()) {
       el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
     } else {
-      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(state.round?.closesAt || new Date()))}</strong><small>轮次参考</small></span>`;
+      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(state.round?.closesAt || new Date()))}</strong></span>`;
     }
   }
   const note = $("[data-round-note]");
@@ -346,7 +348,7 @@ function renderRound(payload) {
   const interval = payload.settings?.matchIntervalDays || payload.round.intervalDays || 3;
   const note = payload.settings?.matchWindowNote || payload.round.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。";
   $("[data-round-note]").textContent = `原则上每 ${interval} 天匹配一次，具体会随画像分布浮动`;
-  $("[data-round-id]").textContent = payload.round.id;
+  $("[data-round-id]").textContent = formatDateOnly(new Date());
   $("[data-participants]").textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
   $("[data-dashboard-title]").textContent = `${formatDateOnly(new Date())} 画像池更新中`;
   $("[data-close-time]").textContent = `个人下次分配参考：${formatDateOnly(payload.round.closesAt)}`;

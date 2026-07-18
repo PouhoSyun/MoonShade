@@ -738,6 +738,28 @@ function profileWeightFactors(profile, profiles, history, now = Date.now()) {
   };
 }
 
+function genderBaseIntervalDays(profile, profiles = []) {
+  const participants = profiles.filter(item => item.consent !== false && item.gender);
+  const men = participants.filter(item => item.gender === "男").length;
+  const women = participants.filter(item => item.gender === "女").length;
+  if (!men || !women || !["男", "女"].includes(profile.gender)) return 4;
+  const womenMenRatio = women / men;
+  const maleDays = 4 * Math.sqrt(womenMenRatio);
+  const femaleDays = 4 / Math.sqrt(womenMenRatio);
+  return profile.gender === "男" ? maleDays : femaleDays;
+}
+
+function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, now = Date.now()) {
+  const baseDays = genderBaseIntervalDays(profile, profiles);
+  const personalOffset = clampNumber((Number(personalWeight) - 1) * 0.45, -0.75, 0.75);
+  const intervalDays = clampNumber(baseDays - personalOffset, 1, 7);
+  const referenceAt = lastAt || now;
+  return {
+    intervalDays: roundWeight(intervalDays, 2),
+    expectedAt: referenceAt + intervalDays * 86_400_000
+  };
+}
+
 function publicProfile(profile, context = {}) {
   const frequency = context.frequencyMap?.get(profile.id) || null;
   return {
@@ -1143,11 +1165,13 @@ function profileClarity(profile) {
 }
 
 function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map()) {
-  const interval = cleanSettings(settings).matchIntervalDays;
   const factors = profileWeightFactors(profile, profiles, history, now);
   const { lastAt, daysSince, clarity, completeness, personalWeight } = factors;
-  const referenceDays = daysSince === null ? 0 : Math.max(0, interval - daysSince);
-  const nextEligibleAtMs = lastAt ? lastAt + interval * 86_400_000 : now;
+  const allocation = expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, now);
+  const interval = allocation.intervalDays;
+  const remainingMs = allocation.expectedAt - now;
+  const referenceDays = Math.max(0, Math.ceil(remainingMs / 86_400_000));
+  const nextEligibleAtMs = allocation.expectedAt;
   const eligible = nextEligibleAtMs <= now;
   const genderRank = genderRanks.get(profile.id) || null;
   const label = personalWeight >= 1.2 ? "优先候选" : personalWeight >= 0.7 ? "标准候选" : "待补充画像";
@@ -1275,11 +1299,10 @@ function orientationWeightForPair(a, b) {
 function scorePair(a, b) {
   if (a.id === b.id) return null;
   const gate = boundaryGateForPair(a, b);
-  if (gate.hardBlocked) return null;
   const orientation = orientationWeightForPair(a, b);
   const basis = roundWeight(gate.booleanGate * orientation.orientationWeight);
   const reasons = [
-    gate.softViolationCount ? `存在 ${gate.softViolationCount} 项软性违例` : "布尔门槛完全通过",
+    gate.hardBlocked ? "布尔门槛为 0，存在硬性不符合项" : (gate.softViolationCount ? `存在 ${gate.softViolationCount} 项软性违例` : "布尔门槛完全通过"),
     orientation.interestMatches >= 7 ? `共同兴趣 ${orientation.interestMatches} 项` : `共同兴趣 ${orientation.interestMatches} 项，未达到加权门槛`,
     orientation.freeTextHits ? `未涉及爱好命中 ${orientation.freeTextHits} 项` : ""
   ].filter(Boolean);
@@ -1291,6 +1314,7 @@ function scorePair(a, b) {
     interestMatchCount: orientation.interestMatches,
     freeTextInterestHits: orientation.freeTextHits,
     softViolationCount: gate.softViolationCount,
+    hardBlocked: gate.hardBlocked,
     reasons: reasons.slice(0, 4)
   };
 }
@@ -1316,7 +1340,7 @@ function bestMatchesFor(profile, profiles) {
 }
 
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
-  const pool = profiles.filter(profile => profile.consent && validateProfile(profile).length === 0);
+  const pool = profiles.filter(profile => profile.consent);
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
   const activePool = [...pool].sort((a, b) => {
@@ -1324,7 +1348,6 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
     const right = frequencies.get(b.id)?.genderRank || 999;
     return left - right;
   });
-  const used = new Set();
   const candidates = [];
   const pairs = [];
   const today = new Date().toISOString().slice(0, 10);
@@ -1345,11 +1368,8 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
     }
   }
-  candidates.sort((a, b) => b.adjustedScore - a.adjustedScore);
-  for (const best of candidates) {
-    if (used.has(best.left.id) || used.has(best.right.id)) continue;
-    used.add(best.left.id);
-    used.add(best.right.id);
+  candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
+  for (const best of candidates.slice(0, 10)) {
     const leftFrequency = frequencies.get(best.left.id);
     const rightFrequency = frequencies.get(best.right.id);
     const boundaryWarnings = matchBoundaryWarnings(best.left, best.right);
@@ -1370,6 +1390,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       interestMatchCount: best.interestMatchCount,
       freeTextInterestHits: best.freeTextInterestHits,
       softViolationCount: best.softViolationCount,
+      hardBlocked: best.hardBlocked,
       weightBreakdown: {
         left: {
           completenessCoefficient: leftFrequency?.completenessCoefficient || 0,
@@ -1401,7 +1422,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
         `布尔门槛 ${best.booleanGate}`,
         `取向权重 ${best.orientationWeight}`,
         `交叉权重 ${best.crossWeight}`,
-        boundaryWarnings.length ? `存在 ${boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过",
+        best.hardBlocked ? "硬性不符合，保留为 0 权重候选" : (boundaryWarnings.length ? `存在 ${boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过"),
         best.repeatedCount ? `重复降权系数 ${best.repeatFactor}` : "无历史重复降权"
       ].slice(0, 8),
       status: "draft",
@@ -1413,7 +1434,6 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-    if (pairs.length >= 10) break;
   }
   return pairs;
 }
@@ -1436,16 +1456,16 @@ function matchPreview(left, right, matches, settings) {
   const leftFrequency = frequencies.get(left.id);
   const rightFrequency = frequencies.get(right.id);
   const boundaryWarnings = matchBoundaryWarnings(left, right);
-  const hardBlocked = boundaryWarnings.some(item => item.strict);
-  const scored = hardBlocked ? null : scorePair(left, right);
+  const scored = scorePair(left, right);
+  const hardBlocked = scored?.hardBlocked || false;
   const personalWeight = roundWeight((leftFrequency?.personalWeight || 0) * (rightFrequency?.personalWeight || 0));
-  const crossWeight = hardBlocked ? 0 : roundWeight(personalWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
+  const crossWeight = roundWeight(personalWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
   const key = pairKey(left.id, right.id);
   const history = matchHistory(matches);
   const repeatedCount = history.pairCounts.get(key) || 0;
   const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
   const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
-  const finalWeight = hardBlocked ? 0 : roundWeight(crossWeight * repeatFactor);
+  const finalWeight = roundWeight(crossWeight * repeatFactor);
   return {
     hardBlocked,
     score: crossWeight,
@@ -1912,9 +1932,6 @@ async function handleApi(req, res, url) {
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
       const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.id !== match.id), data.settings) : null;
-      if (preview?.hardBlocked && match.status !== "held") {
-        return sendJson(res, 400, { error: "该组合存在硬性不符合项，不能保存为候选匹配。", warnings: preview.boundaryWarnings });
-      }
       if (preview) {
         match.score = preview.score;
         delete match.rawScore;

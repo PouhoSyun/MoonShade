@@ -2055,6 +2055,10 @@ textarea:focus {
   justify-content: flex-start;
 }
 
+.hero-countdown .countdown strong {
+  font-size: clamp(30px, 3.6vw, 48px);
+}
+
 .home-login-panel {
   min-height: calc(100vh - 72px);
   display: grid;
