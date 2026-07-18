@@ -1980,13 +1980,16 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/round") {
     const round = currentRound(new Date(), data.settings);
     const roundProfiles = data.profiles.filter(profile => profile.consent);
+    const publishedMatchCount = data.matches.filter(match => match.status === "published").length;
     return sendJson(res, 200, {
       round,
       settings: cleanSettings(data.settings),
       stats: {
         participants: roundProfiles.length,
         women: roundProfiles.filter(profile => profile.gender === "女").length,
-        men: roundProfiles.filter(profile => profile.gender === "男").length
+        men: roundProfiles.filter(profile => profile.gender === "男").length,
+        publishedMatches: publishedMatchCount,
+        matchedPeople: publishedMatchCount * 2
       },
       announcements: data.announcements || []
     });

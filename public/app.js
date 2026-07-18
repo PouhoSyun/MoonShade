@@ -348,6 +348,9 @@ function renderRound(payload) {
   const interval = payload.settings?.matchIntervalDays || payload.round.intervalDays || 3;
   const note = payload.settings?.matchWindowNote || payload.round.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。";
   $("[data-round-note]").textContent = `原则上每 ${interval} 天匹配一次，具体会随画像分布浮动`;
+  const matchedPeople = Number(payload.stats?.matchedPeople) || 0;
+  const matchedPeopleTarget = $("[data-matched-people]");
+  if (matchedPeopleTarget) matchedPeopleTarget.textContent = `已匹配 ${matchedPeople} 人次`;
   $("[data-round-id]").textContent = formatDateOnly(new Date());
   $("[data-participants]").textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
   $("[data-dashboard-title]").textContent = `${formatDateOnly(new Date())} 画像池更新中`;
