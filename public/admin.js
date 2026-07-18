@@ -120,17 +120,14 @@ function weightText(frequency) {
 
 function renderBoundaryWarnings(warnings = []) {
   if (!warnings.length) return `<div class="match-boundary-ok">所有可接受范围未发现不符合项</div>`;
-  const visible = warnings.slice(0, 2);
-  const rest = warnings.length - visible.length;
   return `
     <div class="match-boundary-warnings">
-      ${visible.map(item => `
+      ${warnings.map(item => `
         <span>
           <strong>${escapeHtml(item.strict ? "严格" : "软性")}</strong>
           ${escapeHtml(item.label)}：${escapeHtml(item.message)}
         </span>
       `).join("")}
-      ${rest > 0 ? `<span>另有 ${rest} 项不符合，进入详情可逐项核对。</span>` : ""}
     </div>
   `;
 }
@@ -430,7 +427,9 @@ function renderProfileDetail() {
       ["出生年", profile.birthYear],
       ["可接受出生年", [profile.idealBirthYearMin || "不限", profile.idealBirthYearMax || "不限"].join(" - ")],
       ["身份", profile.identity],
+      ["可接受身份", profile.idealIdentities],
       ["院校背景", profile.schoolType],
+      ["可接受院校背景", profile.idealSchoolTypes],
       ["所在校区", profile.location],
       ["可接受校区", profile.idealLocations],
       ["家乡省份", profile.hometownProvince],
@@ -592,7 +591,7 @@ function hardCompatible(left, right) {
     && (!rightHasRange || !leftYear || yearInRange(leftYear, rightMin, rightMax));
   const locationOk = locationAccepted(right.location || right.city, left.idealLocations)
     && locationAccepted(left.location || left.city, right.idealLocations);
-  return genderOk && ageOk && locationOk && firstVolumeCompatible(left, right);
+  return genderOk && ageOk && locationOk;
 }
 
 function compatibleProfileOptions(selectedId, counterpartId) {
@@ -603,11 +602,10 @@ function compatibleProfileOptions(selectedId, counterpartId) {
 }
 
 function renderMatchDiagnostics(match) {
-  const reasons = (match.reasons || []).slice(0, 3);
-  const hiddenReasonCount = Math.max(0, (match.reasons || []).length - reasons.length);
+  const reasons = match.reasons || [];
   return `
     <div class="match-diagnostics" data-match-diagnostics>
-      <p>${reasons.map(reason => `· ${escapeHtml(reason)}`).join("<br>")}${hiddenReasonCount ? `<br>· 另有 ${hiddenReasonCount} 条参考依据` : ""}</p>
+      <p>${reasons.map(reason => `· ${escapeHtml(reason)}`).join("<br>")}</p>
       ${renderBoundaryWarnings(match.boundaryWarnings)}
       <div class="match-frequency-notes">
         ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：个人 ${escapeHtml(personalWeightValue(match.left.matchFrequency))}</span>` : ""}

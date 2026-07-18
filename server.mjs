@@ -990,8 +990,8 @@ function matchBoundaryWarnings(a, b) {
     ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department]
   ];
   for (const [field, label, actualLabel, idealKey, actualGetter] of firstVolumeChecks) {
-    addAcceptableWarning(warnings, a, b, { field, strict: true, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
-    addAcceptableWarning(warnings, b, a, { field, strict: true, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
   }
 
   const otherAcceptableChecks = [
@@ -1065,7 +1065,7 @@ function matchHistory(matches = []) {
   const lastPartners = new Map();
   const lastMatchedAt = new Map();
   const proposals = matches
-    .filter(match => ["draft", "published"].includes(match.status))
+    .filter(match => match.status === "published")
     .sort((a, b) => matchTime(a) - matchTime(b));
   for (const match of proposals) {
     const key = pairKey(match.leftId, match.rightId);
@@ -1450,9 +1450,10 @@ function ensureDailyDraftMatches(data) {
   return generated.length > 0;
 }
 
-function matchPreview(left, right, matches, settings) {
+function matchPreview(left, right, matches, settings, profiles = [left, right]) {
   if (!left || !right) return null;
-  const frequencies = frequencyMapFor([left, right], matches, settings);
+  const frequencyPool = profiles.filter(profile => profile?.consent);
+  const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings);
   const leftFrequency = frequencies.get(left.id);
   const rightFrequency = frequencies.get(right.id);
   const boundaryWarnings = matchBoundaryWarnings(left, right);
@@ -1504,8 +1505,8 @@ function matchPreview(left, right, matches, settings) {
       repeatFactor,
       finalWeight
     },
-    left: publicProfile(left, { frequencyMap: frequencies }),
-    right: publicProfile(right, { frequencyMap: frequencies })
+    left: adminMatchProfile(left, { frequencyMap: frequencies }),
+    right: adminMatchProfile(right, { frequencyMap: frequencies })
   };
 }
 
@@ -1684,6 +1685,10 @@ function adminProfile(profile, context = {}) {
   };
 }
 
+function adminMatchProfile(profile, context = {}) {
+  return adminProfile(profile, context);
+}
+
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
   const frequencies = frequencyMapFor(profiles, historyMatches, settings);
@@ -1696,8 +1701,8 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
     return {
       ...match,
       boundaryWarnings: leftProfile && rightProfile ? matchBoundaryWarnings(leftProfile, rightProfile) : [],
-      left: leftProfile ? publicProfile(leftProfile, { frequencyMap: frequencies }) : null,
-      right: rightProfile ? publicProfile(rightProfile, { frequencyMap: frequencies }) : null
+      left: leftProfile ? adminMatchProfile(leftProfile, { frequencyMap: frequencies }) : null,
+      right: rightProfile ? adminMatchProfile(rightProfile, { frequencyMap: frequencies }) : null
     };
   });
 }
@@ -1903,7 +1908,7 @@ async function handleApi(req, res, url) {
       const left = data.profiles.find(item => item.id === cleanText(adminBody.leftId, 80));
       const right = data.profiles.find(item => item.id === cleanText(adminBody.rightId, 80));
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
-      return sendJson(res, 200, { preview: matchPreview(left, right, data.matches, data.settings) });
+      return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users") {
       const result = seedDemoProfiles(data);
@@ -1931,7 +1936,7 @@ async function handleApi(req, res, url) {
       match.notes = cleanText(body.notes, 500);
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
-      const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.id !== match.id), data.settings) : null;
+      const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) : null;
       if (preview) {
         match.score = preview.score;
         delete match.rawScore;
