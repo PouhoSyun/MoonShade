@@ -57,10 +57,6 @@ function detailBlock(title, items) {
   `;
 }
 
-function statusLabel(status) {
-  return ({ draft: "推送", published: "已推送", held: "暂缓" })[status] || status;
-}
-
 function formatDateTime(value) {
   if (!value) return "暂无";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -288,7 +284,16 @@ async function loadAdmin() {
 }
 
 function candidateMatches() {
-  return state.matches.filter(match => match.status !== "published");
+  const publishedParticipantIds = new Set(
+    state.matches
+      .filter(match => match.status === "published")
+      .flatMap(match => [match.leftId, match.rightId])
+  );
+  return state.matches.filter(match =>
+    match.status === "draft"
+    && !publishedParticipantIds.has(match.leftId)
+    && !publishedParticipantIds.has(match.rightId)
+  );
 }
 
 function publishedMatches() {
@@ -316,7 +321,7 @@ function renderSettings() {
   $("[data-admin-match-count]").textContent = String(candidateMatches().length);
   $("[data-admin-interval]").textContent = String(state.settings.matchIntervalDays || 3);
   $("[data-admin-round-note]").textContent = state.round
-    ? `${state.round.label}。每日按个人权重与交叉权重刷新候选，管理员选择推送或暂缓。`
+    ? `${state.round.label}。每日按个人权重与交叉权重刷新候选，管理员选择推送；已发布可撤回。`
     : "轮次信息加载中。";
 }
 
@@ -668,7 +673,6 @@ function renderMatches() {
       <div class="match-admin-head">
         <strong>最终权重 ${escapeHtml(formatWeight(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score))}</strong>
         <small>交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · 个人乘积 ${escapeHtml(formatWeight(match.personalWeight))} · 布尔 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))} · 取向 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</small>
-        <span>${escapeHtml(statusLabel(match.status))}</span>
         ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
       <label>Moon
@@ -677,16 +681,8 @@ function renderMatches() {
       <label>Shade
         <select data-right-id>${compatibleProfileOptions(match.rightId, match.leftId)}</select>
       </label>
-      <label>状态
-        <select data-status>
-          ${["draft", "held"].map(status => `<option value="${status}" ${match.status === status ? "selected" : ""}>${statusLabel(status)}</option>`).join("")}
-        </select>
-      </label>
-      <label>备注
-        <textarea data-notes rows="2">${escapeHtml(match.notes || "")}</textarea>
-      </label>
       ${renderMatchDiagnostics(match)}
-      <button class="secondary-action" data-save-match>保存调整</button>
+      <button class="secondary-action" data-push-match>推送</button>
     </article>
   `).join("");
 }
@@ -704,24 +700,9 @@ function renderPublishedMatches() {
       <div class="match-admin-head">
         <strong>${escapeHtml(match.left?.displayName || "Moon")} × ${escapeHtml(match.right?.displayName || "Shade")}</strong>
         <small>最终权重 ${escapeHtml(formatWeight(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score))} · 交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · ${escapeHtml(formatDateTime(match.publishedAt || match.updatedAt))}</small>
-        <span>${escapeHtml(statusLabel(match.status))}</span>
       </div>
-      <label>Moon
-        <select data-left-id>${compatibleProfileOptions(match.leftId, match.rightId)}</select>
-      </label>
-      <label>Shade
-        <select data-right-id>${compatibleProfileOptions(match.rightId, match.leftId)}</select>
-      </label>
-      <label>状态
-        <select data-status>
-          ${["published", "held"].map(status => `<option value="${status}" ${match.status === status ? "selected" : ""}>${status === "published" ? "推送" : statusLabel(status)}</option>`).join("")}
-        </select>
-      </label>
-      <label>备注
-        <textarea data-notes rows="2">${escapeHtml(match.notes || "")}</textarea>
-      </label>
       ${renderMatchDiagnostics(match)}
-      <button class="secondary-action" data-save-match>保存调整</button>
+      <button class="secondary-action" data-withdraw-match>撤回</button>
     </article>
   `).join("");
 }
@@ -765,8 +746,7 @@ async function saveSettings() {
   }
 }
 
-async function saveMatch(card) {
-  const nextStatus = card.querySelector("[data-status]").value;
+async function pushMatch(card) {
   await api("/api/admin/matches/update", {
     method: "POST",
     body: JSON.stringify({
@@ -774,11 +754,22 @@ async function saveMatch(card) {
       matchId: card.dataset.matchId,
       leftId: card.querySelector("[data-left-id]").value,
       rightId: card.querySelector("[data-right-id]").value,
-      status: nextStatus,
-      notes: card.querySelector("[data-notes]").value
+      status: "published"
     })
   });
-  if (nextStatus === "held") state.view = "dashboard";
+  state.view = "dashboard";
+  await loadAdmin();
+}
+
+async function withdrawMatch(card) {
+  await api("/api/admin/matches/delete", {
+    method: "POST",
+    body: JSON.stringify({
+      adminToken: state.token,
+      matchId: card.dataset.matchId
+    })
+  });
+  state.view = "published";
   await loadAdmin();
 }
 
@@ -823,8 +814,15 @@ document.addEventListener("click", event => {
     deleteAnnouncement(deleteAnnouncementButton.dataset.deleteAnnouncement);
     return;
   }
-  const button = event.target.closest("[data-save-match]");
-  if (button) saveMatch(button.closest("[data-match-id]"));
+  const pushButton = event.target.closest("[data-push-match]");
+  if (pushButton) {
+    pushMatch(pushButton.closest("[data-match-id]"));
+    return;
+  }
+  const withdrawButton = event.target.closest("[data-withdraw-match]");
+  if (withdrawButton) {
+    withdrawMatch(withdrawButton.closest("[data-match-id]"));
+  }
 });
 document.addEventListener("change", event => {
   const select = event.target.closest("[data-left-id], [data-right-id]");

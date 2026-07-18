@@ -983,7 +983,6 @@ function matchBoundaryWarnings(a, b) {
   }
 
   const firstVolumeChecks = [
-    ["identity", "身份", "身份", "idealIdentities", profile => profile.identity || profile.stage],
     ["schoolType", "院校背景", "院校背景", "idealSchoolTypes", profile => profile.schoolType],
     ["hometownRegion", "家乡地区", "家乡地区", "idealHometownRegions", profile => regionForProvince(profile.hometownProvince)],
     ["homeArea", "成长环境", "成长环境", "idealHomeAreas", profile => profile.homeArea],
@@ -1340,7 +1339,10 @@ function bestMatchesFor(profile, profiles) {
 }
 
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
-  const pool = profiles.filter(profile => profile.consent);
+  const publishedParticipantIds = new Set(matches
+    .filter(match => match.status === "published" && match.roundId === roundId)
+    .flatMap(match => [match.leftId, match.rightId]));
+  const pool = profiles.filter(profile => profile.consent && !publishedParticipantIds.has(profile.id));
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
   const activePool = [...pool].sort((a, b) => {
@@ -1910,6 +1912,13 @@ async function handleApi(req, res, url) {
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
       return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
     }
+    if (req.method === "POST" && url.pathname === "/api/admin/matches/delete") {
+      const matchId = cleanText(adminBody.matchId, 80);
+      const before = data.matches.length;
+      data.matches = data.matches.filter(item => item.id !== matchId);
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, { deleted: before - data.matches.length, matches: serializeAdminMatches(data.matches, data.profiles, data.settings) });
+    }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users") {
       const result = seedDemoProfiles(data);
       await writeJson(DATA_FILE, data);
@@ -1928,15 +1937,10 @@ async function handleApi(req, res, url) {
       if (!match) return sendJson(res, 404, { error: "匹配记录不存在。" });
       if (body.leftId) match.leftId = cleanText(body.leftId, 80);
       if (body.rightId) match.rightId = cleanText(body.rightId, 80);
-      if (body.status) {
-        const nextStatus = cleanText(body.status, 30);
-        if (nextStatus === "published" && match.status !== "published") match.publishedAt = new Date().toISOString();
-        match.status = nextStatus;
-      }
-      match.notes = cleanText(body.notes, 500);
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
-      const preview = left && right ? matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) : null;
+      const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
+      const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles) : null;
       if (preview) {
         match.score = preview.score;
         delete match.rawScore;
@@ -1946,8 +1950,28 @@ async function handleApi(req, res, url) {
         match.adjustedScore = preview.adjustedScore;
         match.weightBreakdown = preview.weightBreakdown;
         match.reasons = preview.reasons;
+        match.booleanGate = preview.booleanGate;
+        match.orientationWeight = preview.orientationWeight;
+        match.interestMatchCount = preview.interestMatchCount;
+        match.freeTextInterestHits = preview.freeTextInterestHits;
+        match.softViolationCount = preview.softViolationCount;
+        match.hardBlocked = preview.hardBlocked;
       }
+      if (body.status) {
+        const nextStatus = cleanText(body.status, 30);
+        if (nextStatus === "published" && match.status !== "published") match.publishedAt = new Date().toISOString();
+        match.status = nextStatus;
+      }
+      match.notes = cleanText(body.notes, 500);
       match.updatedAt = new Date().toISOString();
+      if (match.status === "published") {
+        const blockedIds = new Set([match.leftId, match.rightId]);
+        data.matches = data.matches.filter(item =>
+          item.id === match.id
+          || item.status !== "draft"
+          || (!blockedIds.has(item.leftId) && !blockedIds.has(item.rightId))
+        );
+      }
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings, data.matches)[0] });
     }
