@@ -166,6 +166,9 @@ const interestFields = [
   ["otherInterests", "其他"]
 ];
 
+const pausedHomeMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请右侧点选。欢迎向朋友们推荐月影MoonShade，深表感谢！";
+const pausedStatusMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请移步首页。欢迎向朋友们推荐月影MoonShade，深表感谢！";
+
 const $ = selector => document.querySelector(selector);
 const $$ = selector => Array.from(document.querySelectorAll(selector));
 
@@ -228,7 +231,7 @@ function hasAuthToken() {
 }
 
 function schedulePhrase(frequency) {
-  if (state.profile?.matchPaused) return "已暂停匹配";
+  if (state.profile?.matchPaused) return pausedHomeMessage;
   return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
 }
 
@@ -304,13 +307,13 @@ function renderPersonalSchedule() {
   const note = $("[data-round-note]");
   if (note) {
     note.textContent = paused
-      ? "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请移步主页。欢迎向朋友们推荐月影MoonShade，深表感谢！"
+      ? pausedHomeMessage
       : (frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动");
   }
   const closeTime = $("[data-close-time]");
   if (closeTime) {
     closeTime.textContent = paused
-      ? "已暂停匹配"
+      ? pausedStatusMessage
       : frequency
       ? `个人下次分配参考：${formatDateOnly(frequency.expectedNextAllocationAt)}`
       : "个人下次分配参考：提交问卷后生成";
@@ -842,7 +845,7 @@ function intimacyAnswersCurrent(source) {
 }
 
 function needsSurveySupplement(profile) {
-  return requiredVolumeNumbers(profile).length > 0;
+  return requiredVolumeNumbers(profile);
 }
 
 function surveySnapshot() {
@@ -909,7 +912,7 @@ function fillForm(profile) {
   state.profile = profile;
   state.selected = {};
   const supplementNeeded = needsSurveySupplement(profile);
-  if (supplementNeeded && state.pageIndex === 0) state.pageIndex = 1;
+  if (supplementNeeded.length && state.pageIndex === 0) state.pageIndex = 1;
   [
     "displayName", "gender", "birthYear", "identity", "schoolType", "location", "discipline", "seeking",
     "idealBirthYearMin", "idealBirthYearMax", "idealIdentities", "idealLocations", "hometownProvince", "idealHometownRegions",
@@ -929,7 +932,7 @@ function fillForm(profile) {
   form.elements.consent.checked = profile.consent === true;
   const message = $("[data-form-message]");
   if (message) {
-    message.textContent = supplementNeeded
+    message.textContent = supplementNeeded.length
       ? `问卷题目已更新，请补充第 ${supplementNeeded.join("、")} 卷后重新提交。其他已填写内容已为你保留。`
       : "";
   }
@@ -1057,7 +1060,6 @@ function bindAuth() {
         renderPersonalSchedule();
       } catch (error) {
         appendAuthLog(error.message);
-        alert(error.message);
       } finally {
         pauseButton.disabled = false;
         renderMatchPauseControl();
