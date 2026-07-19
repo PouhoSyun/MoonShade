@@ -228,6 +228,7 @@ function hasAuthToken() {
 }
 
 function schedulePhrase(frequency) {
+  if (state.profile?.matchPaused) return "已暂停匹配";
   return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
 }
 
@@ -271,6 +272,7 @@ function requiredCompletionRatio(source = {}) {
 }
 
 function profileMetricLine(frequency) {
+  if (state.profile?.matchPaused) return "已暂停匹配";
   const completenessRatio = Number.isFinite(Number(frequency?.completenessRatio))
     ? Number(frequency.completenessRatio)
     : requiredCompletionRatio(state.profile || state.selected);
@@ -282,9 +284,16 @@ function profileMetricLine(frequency) {
 function renderPersonalSchedule() {
   const el = $("[data-countdown]");
   const frequency = state.profile?.matchFrequency;
+  const paused = state.profile?.matchPaused === true;
   const interval = frequency?.intervalDays || state.round?.intervalDays || state.round?.settings?.matchIntervalDays || 3;
+  const statusPanel = $("[data-profile-status-panel]");
+  if (statusPanel) statusPanel.classList.toggle("is-match-paused", paused);
+  const dashboardTitle = $("[data-dashboard-title]");
+  if (dashboardTitle) dashboardTitle.textContent = paused ? "已暂停匹配" : `${formatDateOnly(new Date())} 画像池更新中`;
   if (el) {
-    if (frequency) {
+    if (paused) {
+      el.innerHTML = `<span><strong>已暂停匹配</strong></span>`;
+    } else if (frequency) {
       el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong></span>`;
     } else if (hasAuthToken()) {
       el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
@@ -294,11 +303,15 @@ function renderPersonalSchedule() {
   }
   const note = $("[data-round-note]");
   if (note) {
-    note.textContent = frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动";
+    note.textContent = paused
+      ? "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请移步主页。欢迎向朋友们推荐月影MoonShade，深表感谢！"
+      : (frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动");
   }
   const closeTime = $("[data-close-time]");
   if (closeTime) {
-    closeTime.textContent = frequency
+    closeTime.textContent = paused
+      ? "已暂停匹配"
+      : frequency
       ? `个人下次分配参考：${formatDateOnly(frequency.expectedNextAllocationAt)}`
       : "个人下次分配参考：提交问卷后生成";
   }
@@ -306,10 +319,23 @@ function renderPersonalSchedule() {
   if (resultTime) resultTime.textContent = profileMetricLine(frequency);
   const matchFrequency = $("[data-match-frequency]");
   if (matchFrequency) {
-    matchFrequency.textContent = frequency
+    matchFrequency.textContent = paused
+      ? "已暂停匹配"
+      : frequency
       ? `${frequency.label} · 参考间隔 ${frequency.intervalDays} 天`
       : `基础参考间隔 ${interval} 天`;
   }
+  renderMatchPauseControl();
+}
+
+function renderMatchPauseControl() {
+  const button = $("[data-toggle-match-paused]");
+  if (!button) return;
+  const hasProfile = Boolean(state.profile?.id);
+  const paused = state.profile?.matchPaused === true;
+  button.hidden = !hasAuthToken() || !hasProfile;
+  button.textContent = paused ? "恢复匹配" : "暂停匹配";
+  button.classList.toggle("is-paused", paused);
 }
 
 function normalizeRoute(route) {
@@ -1011,6 +1037,30 @@ function bindAuth() {
         appendAuthLog(error.message);
         alert(error.message);
         deleteButton.disabled = false;
+      }
+    });
+  }
+  const pauseButton = $("[data-toggle-match-paused]");
+  if (pauseButton) {
+    pauseButton.addEventListener("click", async () => {
+      if (!state.authToken || !state.profile) return;
+      const nextPaused = state.profile.matchPaused !== true;
+      pauseButton.disabled = true;
+      pauseButton.textContent = nextPaused ? "正在暂停..." : "正在恢复...";
+      try {
+        const payload = await api("/api/profile/match-paused", {
+          method: "POST",
+          body: JSON.stringify({ authToken: state.authToken, paused: nextPaused })
+        });
+        state.profile = payload.profile;
+        fillForm(payload.profile);
+        renderPersonalSchedule();
+      } catch (error) {
+        appendAuthLog(error.message);
+        alert(error.message);
+      } finally {
+        pauseButton.disabled = false;
+        renderMatchPauseControl();
       }
     });
   }

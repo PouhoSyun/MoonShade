@@ -497,26 +497,30 @@ async function deleteAnnouncement(id) {
 
 function renderProfiles() {
   const table = $("[data-profile-table]");
-  const profiles = [...state.profiles].sort((a, b) => {
+  const sortProfiles = profiles => [...profiles].sort((a, b) => {
     const weightDiff = Number(b.matchFrequency?.personalWeight || 0) - Number(a.matchFrequency?.personalWeight || 0);
     if (Math.abs(weightDiff) > 0.0001) return weightDiff;
     const aDays = a.matchFrequency?.daysSinceLastMatch ?? 9999;
     const bDays = b.matchFrequency?.daysSinceLastMatch ?? 9999;
     return bDays - aDays;
   });
+  const activeProfiles = sortProfiles(state.profiles.filter(profile => profile.matchPaused !== true));
+  const pausedProfiles = sortProfiles(state.profiles.filter(profile => profile.matchPaused === true));
+  const rowForProfile = (profile, paused = false) => `
+    <tr class="${[profile.id === state.selectedProfileId ? "is-selected" : "", paused ? "is-paused" : ""].filter(Boolean).join(" ")}" data-view-profile="${escapeHtml(profile.id)}">
+      <td>${escapeHtml(studentIdFromEmail(profile.email))}</td>
+      <td>${escapeHtml(profile.displayName)}</td>
+      <td>${escapeHtml(profile.gender)}</td>
+      <td><span class="frequency-badge">${escapeHtml(paused ? "暂停" : personalWeightValue(profile.matchFrequency))}</span></td>
+      <td>${escapeHtml(paused ? "暂停匹配" : lastMatchText(profile.matchFrequency))}</td>
+      <td>${escapeHtml(profile.identity)}</td>
+    </tr>
+  `;
   table.innerHTML = `
     <thead><tr><th>学号</th><th>展示名</th><th>性别</th><th>个人权重</th><th>上次匹配</th><th>身份</th></tr></thead>
     <tbody>
-      ${profiles.map(profile => `
-        <tr class="${profile.id === state.selectedProfileId ? "is-selected" : ""}" data-view-profile="${escapeHtml(profile.id)}">
-          <td>${escapeHtml(studentIdFromEmail(profile.email))}</td>
-          <td>${escapeHtml(profile.displayName)}</td>
-          <td>${escapeHtml(profile.gender)}</td>
-          <td><span class="frequency-badge">${escapeHtml(personalWeightValue(profile.matchFrequency))}</span></td>
-          <td>${escapeHtml(lastMatchText(profile.matchFrequency))}</td>
-          <td>${escapeHtml(profile.identity)}</td>
-        </tr>
-      `).join("")}
+      ${activeProfiles.map(profile => rowForProfile(profile)).join("") || `<tr><td colspan="6">暂无参与匹配的问卷。</td></tr>`}
+      ${pausedProfiles.length ? `<tr class="paused-section-row"><td colspan="6">已暂停匹配</td></tr>${pausedProfiles.map(profile => rowForProfile(profile, true)).join("")}` : ""}
     </tbody>
   `;
 }
@@ -597,7 +601,8 @@ function renderProfileDetail() {
     ${detailBlock("联系确认", [
       ["联系方式", `${profile.contactType || ""} ${profile.contactValue || ""}`],
       ["自我介绍", profile.selfIntro],
-      ["授权参与", profile.consent ? "是" : "否"]
+      ["授权参与", profile.consent ? "是" : "否"],
+      ["匹配状态", profile.matchPaused ? "已暂停匹配" : "参与匹配"]
     ])}
     ${detailBlock("匹配权重", [
       ["权重标签", profile.matchFrequency?.label],
@@ -619,7 +624,10 @@ function renderProfileDetail() {
 }
 
 function profileOptions(selectedId) {
-  return state.profiles.map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`).join("");
+  return state.profiles
+    .filter(profile => profile.matchPaused !== true || profile.id === selectedId)
+    .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
+    .join("");
 }
 
 function asList(value) {
@@ -708,7 +716,7 @@ function hardCompatible(left, right) {
 
 function compatibleProfileOptions(selectedId, counterpartId) {
   return state.profiles
-    .filter(profile => profile.id !== counterpartId || profile.id === selectedId)
+    .filter(profile => (profile.matchPaused !== true || profile.id === selectedId) && (profile.id !== counterpartId || profile.id === selectedId))
     .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
     .join("");
 }

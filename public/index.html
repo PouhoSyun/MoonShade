@@ -13,7 +13,7 @@
         <span class="brand-dot"></span>
         <span>
           <strong>MoonShade 月影</strong>
-          <small class="app-version">version 1.5.4</small>
+          <small class="app-version">version 1.6.0</small>
         </span>
       </a>
       <nav>
@@ -116,12 +116,15 @@
         </aside>
 
         <div class="dashboard-grid">
-          <section class="panel status-panel">
+          <section class="panel status-panel" data-profile-status-panel>
             <p class="eyebrow">MoonShade · 本轮</p>
             <h2 data-dashboard-title>问卷收集中</h2>
             <div class="status-strip">
               <span data-close-time>下次匹配参考时间加载中</span>
               <span data-result-time>发布状态加载中</span>
+            </div>
+            <div class="status-actions">
+              <button class="secondary-action" type="button" data-toggle-match-paused>暂停匹配</button>
             </div>
             <p class="status-note" data-match-note>原则上每五天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
           </section>

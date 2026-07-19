@@ -137,6 +137,8 @@ function normalizeDisciplineList(value) {
 function normalizeData(data) {
   const profiles = Array.isArray(data.profiles) ? data.profiles.map(profile => ({
     ...profile,
+    matchPaused: profile.matchPaused === true,
+    matchPausedAt: cleanText(profile.matchPausedAt, 40),
     discipline: normalizeDiscipline(profile.discipline),
     department: normalizeDiscipline(profile.department),
     idealDisciplines: normalizeDisciplineList(profile.idealDisciplines)
@@ -470,6 +472,10 @@ function cleanCommunity(input = {}, existing = defaultData.community) {
   };
 }
 
+function isActiveProfile(profile) {
+  return Boolean(profile?.consent) && profile.matchPaused !== true;
+}
+
 const currentIntimacyOptions = ["开放态度", "关系决定", "暂无打算", "柏拉图式"];
 const currentIntimacyTimingOptions = ["不接受", "婚后", "关系稳定后", "相熟数月后", "可以自然发生"];
 const currentSocialBoundaryOptions = ["开放性", "保持现状", "排他性"];
@@ -603,6 +609,8 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     contactType: "微信",
     contactValue: cleanText(input.contactValue, 120),
     consent: input.consent === true,
+    matchPaused: existing.matchPaused === true,
+    matchPausedAt: existing.matchPausedAt || "",
     updatedAt: new Date().toISOString(),
     createdAt: existing.createdAt || new Date().toISOString()
   };
@@ -841,7 +849,7 @@ function profileWeightFactors(profile, profiles, history, now = Date.now(), rank
 }
 
 function genderBaseIntervalDays(profile, profiles = []) {
-  const participants = profiles.filter(item => item.consent !== false && item.gender);
+  const participants = profiles.filter(item => isActiveProfile(item) && item.gender);
   const men = participants.filter(item => item.gender === "男").length;
   const women = participants.filter(item => item.gender === "女").length;
   if (!men || !women || !["男", "女"].includes(profile.gender)) return 4;
@@ -909,6 +917,8 @@ function publicProfile(profile, context = {}) {
     idealHeight: profile.idealHeight,
     mbti: profile.mbti,
     selfIntro: profile.selfIntro,
+    matchPaused: profile.matchPaused === true,
+    matchPausedAt: profile.matchPausedAt || null,
     matchFrequency: frequency ? {
       label: frequency.label,
       intervalDays: frequency.intervalDays,
@@ -1389,7 +1399,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const publishedParticipantIds = new Set(matches
     .filter(match => match.status === "published" && match.roundId === roundId)
     .flatMap(match => [match.leftId, match.rightId]));
-  const pool = profiles.filter(profile => profile.consent && !publishedParticipantIds.has(profile.id));
+  const pool = profiles.filter(profile => isActiveProfile(profile) && !publishedParticipantIds.has(profile.id));
   const history = matchHistory(matches);
   const frequencies = frequencyMapFor(pool, matches, settings);
   const activePool = [...pool].sort((a, b) => {
@@ -1490,6 +1500,19 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
 function ensureDailyDraftMatches(data) {
   const roundId = currentRound(new Date(), data.settings).id;
   const today = new Date().toISOString().slice(0, 10);
+  const activeIds = new Set(data.profiles.filter(isActiveProfile).map(profile => profile.id));
+  const publishedIds = new Set(data.matches
+    .filter(match => match.roundId === roundId && match.status === "published")
+    .flatMap(match => [match.leftId, match.rightId]));
+  const hasInvalidDraft = data.matches.some(match =>
+    match.roundId === roundId
+    && match.status === "draft"
+    && (!activeIds.has(match.leftId) || !activeIds.has(match.rightId) || publishedIds.has(match.leftId) || publishedIds.has(match.rightId))
+  );
+  if (hasInvalidDraft) {
+    const generated = replaceRoundDraftMatches(data, roundId);
+    return generated.length > 0;
+  }
   const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === "daily-weight-v2-doc");
   if (hasTodayDraft) return false;
   const generated = replaceRoundDraftMatches(data, roundId);
@@ -1506,7 +1529,7 @@ function replaceRoundDraftMatches(data, roundId) {
 
 function matchPreview(left, right, matches, settings, profiles = [left, right]) {
   if (!left || !right) return null;
-  const frequencyPool = profiles.filter(profile => profile?.consent);
+  const frequencyPool = profiles.filter(profile => isActiveProfile(profile));
   const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings);
   const leftFrequency = frequencies.get(left.id);
   const rightFrequency = frequencies.get(right.id);
@@ -1745,7 +1768,7 @@ function adminMatchProfile(profile, context = {}) {
 
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
-  const frequencies = frequencyMapFor(profiles, historyMatches, settings);
+  const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings);
   return [...matches].sort((a, b) => {
     if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || 0) - (a.adjustedScore || 0);
     return matchTime(b) - matchTime(a);
@@ -1971,7 +1994,7 @@ async function handleApi(req, res, url) {
     if (!requireAdmin(data, token)) return sendJson(res, 401, { error: "需要管理员登录。" });
 
     if (req.method === "GET" && url.pathname === "/api/admin/profiles") {
-      const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
       return sendJson(res, 200, { profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })), users: data.users });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/matches") {
@@ -2048,6 +2071,7 @@ async function handleApi(req, res, url) {
       const left = data.profiles.find(item => item.id === cleanText(adminBody.leftId, 80));
       const right = data.profiles.find(item => item.id === cleanText(adminBody.rightId, 80));
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
+      if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能进入候选。" });
       return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/delete") {
@@ -2060,13 +2084,13 @@ async function handleApi(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users") {
       const result = seedDemoProfiles(data);
       await writeJson(DATA_FILE, data);
-      const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
       return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users/delete") {
       const result = deleteDemoProfiles(data);
       await writeJson(DATA_FILE, data);
-      const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
       return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/update") {
@@ -2077,6 +2101,7 @@ async function handleApi(req, res, url) {
       if (body.rightId) match.rightId = cleanText(body.rightId, 80);
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
+      if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能被推送匹配。" });
       const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
       const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles) : null;
       if (preview) {
@@ -2118,7 +2143,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/round") {
     const round = currentRound(new Date(), data.settings);
-    const roundProfiles = data.profiles.filter(profile => profile.consent);
+    const roundProfiles = data.profiles.filter(isActiveProfile);
     const publishedMatchCount = data.matches.filter(match => match.status === "published").length;
     return sendJson(res, 200, {
       round,
@@ -2141,7 +2166,8 @@ async function handleApi(req, res, url) {
     const profile = authUser
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
-    const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+    const activeProfiles = data.profiles.filter(isActiveProfile);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
     return sendJson(res, 200, {
       profile: profile ? {
         ...profile,
@@ -2169,6 +2195,32 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { profile });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/profile/match-paused") {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const authUser = getUserBySession(data, body.authToken);
+    if (!authUser) return sendJson(res, 401, { error: "请先完成北大邮箱验证。" });
+    const profile = data.profiles.find(item => item.email === authUser.email);
+    if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
+    const paused = body.paused === true;
+    profile.matchPaused = paused;
+    profile.matchPausedAt = paused ? new Date().toISOString() : "";
+    profile.updatedAt = new Date().toISOString();
+    const roundId = currentRound(new Date(), data.settings).id;
+    if (paused) {
+      data.matches = data.matches.filter(match =>
+        match.status !== "draft"
+        || (match.leftId !== profile.id && match.rightId !== profile.id)
+      );
+    }
+    replaceRoundDraftMatches(data, roundId);
+    await writeJson(DATA_FILE, data);
+    const activeProfiles = data.profiles.filter(isActiveProfile);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
+    return sendJson(res, 200, {
+      profile: publicProfile(profile, { frequencyMap })
+    });
+  }
+
   if (req.method === "GET" && url.pathname === "/api/matches") {
     const token = url.searchParams.get("token");
     const authUser = getUserBySession(data, url.searchParams.get("authToken"));
@@ -2176,7 +2228,8 @@ async function handleApi(req, res, url) {
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
     if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
-    const frequencyMap = frequencyMapFor(data.profiles, data.matches, data.settings);
+    const activeProfiles = data.profiles.filter(isActiveProfile);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
     const matches = publishedMatchesFor(profile, data.profiles.filter(item => item.consent), data.matches);
     return sendJson(res, 200, { profile: publicProfile(profile, { frequencyMap }), matches });
   }
