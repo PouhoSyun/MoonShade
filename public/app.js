@@ -166,7 +166,7 @@ const interestFields = [
   ["otherInterests", "其他"]
 ];
 
-const pausedHomeMessage = "已暂停匹配";
+const pausedHomeMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请右侧点选。欢迎向朋友们推荐月影MoonShade，深表感谢！";
 const pausedStatusMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请移步首页。欢迎向朋友们推荐月影MoonShade，深表感谢！";
 
 const $ = selector => document.querySelector(selector);
@@ -307,7 +307,7 @@ function renderPersonalSchedule() {
   const note = $("[data-round-note]");
   if (note) {
     note.textContent = paused
-      ? pausedStatusMessage
+      ? "已暂停匹配"
       : (frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动");
   }
   const closeTime = $("[data-close-time]");
@@ -320,6 +320,12 @@ function renderPersonalSchedule() {
   }
   const resultTime = $("[data-result-time]");
   if (resultTime) resultTime.textContent = profileMetricLine(frequency);
+  const matchNote = $("[data-match-note]");
+  if (matchNote) {
+    matchNote.textContent = paused
+      ? pausedStatusMessage
+      : (state.round?.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。");
+  }
   const matchFrequency = $("[data-match-frequency]");
   if (matchFrequency) {
     matchFrequency.textContent = paused
