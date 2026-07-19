@@ -410,6 +410,7 @@ h1 {
   z-index: 1;
   margin-top: 18px;
   max-width: 760px;
+  white-space: pre-line;
 }
 
 .rhythm-panel,
