@@ -501,7 +501,7 @@ function renderProfileDetail() {
       ["稀缺度系数", formatWeight(profile.matchFrequency?.scarcityCoefficient)],
       ["个人权重", personalWeightValue(profile.matchFrequency)],
       ["同性别排序", profile.matchFrequency?.genderRank],
-      ["画像清晰度", profile.matchFrequency?.clarityRatio ? `${Math.round(profile.matchFrequency.clarityRatio * 100)}%（${profile.matchFrequency.clarityFilled}/${profile.matchFrequency.clarityTotal}）` : ""],
+      ["画像清晰度", profile.matchFrequency?.clarityRatio !== undefined ? `排名 ${Math.round(profile.matchFrequency.clarityRatio * 100)}% · 原始宽窄 ${Math.round((profile.matchFrequency.precisionRawRatio || 0) * 100)}%` : ""],
       ["问卷完整度", profile.matchFrequency?.completenessRatio ? `${Math.round(profile.matchFrequency.completenessRatio * 100)}%（${profile.matchFrequency.completenessFilled}/${profile.matchFrequency.completenessTotal}）` : ""],
       ["距上次成功匹配", profile.matchFrequency?.daysSinceLastMatch === null || profile.matchFrequency?.daysSinceLastMatch === undefined ? "暂无成功匹配" : `${profile.matchFrequency.daysSinceLastMatch} 天`],
       ["上次成功匹配时间", formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt)],

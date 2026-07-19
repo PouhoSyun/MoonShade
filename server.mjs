@@ -659,10 +659,20 @@ function remapCoefficient(value) {
 
 const precisionMultiselectFields = [
   { key: "seeking", total: 4 },
-  { key: "location", total: 15 },
+  { key: "idealLocations", total: 15 },
+  { key: "idealHometownRegions", total: 8 },
+  { key: "idealHomeAreas", total: 5 },
+  { key: "idealDisciplines", total: 8 },
+  { key: "idealIntent", total: 4 },
+  { key: "idealTempo", total: 4 },
   { key: "idealIntimacy", total: currentIntimacyOptions.length },
   { key: "idealIntimacyTiming", total: currentIntimacyTimingOptions.length },
-  { key: "idealSocialBoundary", total: currentSocialBoundaryOptions.length }
+  { key: "idealSocialBoundary", total: currentSocialBoundaryOptions.length },
+  { key: "idealWeekends", total: 7 },
+  { key: "idealStyle", total: 13 },
+  { key: "idealAppearanceFeel", total: 5 },
+  { key: "idealHair", total: 4 },
+  { key: "idealGlasses", total: 4 }
 ];
 
 const scarcitySingleFields = [
@@ -677,15 +687,29 @@ const scarcitySingleFields = [
   "socialBoundary"
 ];
 
-function precisionCoefficient(profile) {
+function multiselectSpecificity(value, total) {
+  const list = asList(value);
+  if (!list.length || !total) return 0;
+  if (list.includes("不限") || list.includes("不设偏好")) return 0.08;
+  if (total <= 1) return 1;
+  return clampNumber(1 - (Math.min(list.length, total) - 1) / (total - 1), 0, 1);
+}
+
+function yearRangeSpecificity(profile) {
+  const min = Number.isInteger(profile.idealBirthYearMin) ? profile.idealBirthYearMin : 1990;
+  const max = Number.isInteger(profile.idealBirthYearMax) ? profile.idealBirthYearMax : 2010;
+  if (!Number.isInteger(profile.idealBirthYearMin) && !Number.isInteger(profile.idealBirthYearMax)) return 0;
+  const width = Math.max(1, Math.min(21, Math.abs(max - min) + 1));
+  return clampNumber(1 - (width - 1) / 20, 0, 1);
+}
+
+function rawPrecisionRatio(profile) {
   const scores = precisionMultiselectFields.map(({ key, total }) => {
-    const count = asList(profile[key]).length;
-    if (!count || !total) return 0;
-    const share = Math.min(count / total, 1 / 3);
-    return 1 - share;
+    return multiselectSpecificity(profile[key], total);
   });
+  scores.push(yearRangeSpecificity(profile));
   const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
-  return remapCoefficient(average);
+  return roundWeight(average);
 }
 
 function gapCoefficient(daysSince) {
@@ -701,7 +725,7 @@ function genderRatioCoefficient(profile, profiles = []) {
   return roundWeight(clampNumber(compatible / same, 0.55, 1.8));
 }
 
-function scarcityCoefficient(profile, profiles = []) {
+function rawScarcityRatio(profile, profiles = []) {
   const scores = scarcitySingleFields.map(field => {
     const value = profile[field];
     const answered = profiles.filter(item => item[field]).length;
@@ -710,25 +734,80 @@ function scarcityCoefficient(profile, profiles = []) {
     return 1 - same / answered;
   }).filter(value => value !== null);
   const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
-  return remapCoefficient(average);
+  return roundWeight(average);
 }
 
-function profileWeightFactors(profile, profiles, history, now = Date.now()) {
+function rankedRatios(entries) {
+  const sorted = [...entries].sort((a, b) => a.value - b.value);
+  const ratios = new Map();
+  if (sorted.length <= 1) {
+    sorted.forEach(item => ratios.set(item.id, 0.5));
+    return ratios;
+  }
+  let index = 0;
+  while (index < sorted.length) {
+    let end = index + 1;
+    while (end < sorted.length && sorted[end].value === sorted[index].value) end += 1;
+    const averageIndex = (index + end - 1) / 2;
+    const ratio = averageIndex / (sorted.length - 1);
+    for (let cursor = index; cursor < end; cursor += 1) {
+      ratios.set(sorted[cursor].id, roundWeight(ratio));
+    }
+    index = end;
+  }
+  return ratios;
+}
+
+function rankedCoefficient(rankRatio) {
+  return roundWeight(0.7 + clampNumber(rankRatio, 0, 1) * 0.6);
+}
+
+function profileRankContext(profiles = []) {
+  const pool = profiles.filter(profile => profile?.id);
+  const precisionEntries = pool.map(profile => ({ id: profile.id, value: rawPrecisionRatio(profile) }));
+  const scarcityEntries = pool.map(profile => ({ id: profile.id, value: rawScarcityRatio(profile, pool) }));
+  const precisionRanks = rankedRatios(precisionEntries);
+  const scarcityRanks = rankedRatios(scarcityEntries);
+  return {
+    precision: new Map(precisionEntries.map(item => {
+      const rankRatio = precisionRanks.get(item.id) ?? 0.5;
+      return [item.id, { rawRatio: item.value, rankRatio, coefficient: rankedCoefficient(rankRatio) }];
+    })),
+    scarcity: new Map(scarcityEntries.map(item => {
+      const rankRatio = scarcityRanks.get(item.id) ?? 0.5;
+      return [item.id, { rawRatio: item.value, rankRatio, coefficient: rankedCoefficient(rankRatio) }];
+    }))
+  };
+}
+
+function profileWeightFactors(profile, profiles, history, now = Date.now(), rankContext = profileRankContext(profiles)) {
   const lastAt = history.lastMatchedAt.get(profile.id) || 0;
   const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
   const completeness = profileCompleteness(profile);
-  const clarity = profileClarity(profile);
+  const precisionData = rankContext.precision.get(profile.id) || { rawRatio: rawPrecisionRatio(profile), rankRatio: 0.5, coefficient: 1 };
+  const scarcityData = rankContext.scarcity.get(profile.id) || { rawRatio: rawScarcityRatio(profile, profiles), rankRatio: 0.5, coefficient: 1 };
+  const clarity = {
+    filled: Math.round(precisionData.rawRatio * 100),
+    total: 100,
+    ratio: precisionData.rankRatio,
+    rawRatio: precisionData.rawRatio,
+    rankRatio: precisionData.rankRatio
+  };
   const completenessCoefficient = remapCoefficient(completeness.ratio);
-  const precision = precisionCoefficient(profile);
+  const precision = precisionData.coefficient;
   const gap = gapCoefficient(daysSince);
   const genderRatio = genderRatioCoefficient(profile, profiles);
-  const scarcity = scarcityCoefficient(profile, profiles);
+  const scarcity = scarcityData.coefficient;
   const personalWeight = roundWeight(completenessCoefficient * precision * gap * genderRatio * scarcity);
   return {
     daysSince,
     lastAt,
     completeness,
     clarity,
+    precisionRawRatio: precisionData.rawRatio,
+    precisionRankRatio: precisionData.rankRatio,
+    scarcityRawRatio: scarcityData.rawRatio,
+    scarcityRankRatio: scarcityData.rankRatio,
     completenessCoefficient,
     precisionCoefficient: precision,
     gapCoefficient: gap,
@@ -821,6 +900,10 @@ function publicProfile(profile, context = {}) {
       clarityRatio: frequency.clarityRatio,
       clarityFilled: frequency.clarityFilled,
       clarityTotal: frequency.clarityTotal,
+      precisionRawRatio: frequency.precisionRawRatio,
+      precisionRankRatio: frequency.precisionRankRatio,
+      scarcityRawRatio: frequency.scarcityRawRatio,
+      scarcityRankRatio: frequency.scarcityRankRatio,
       completenessRatio: frequency.completenessRatio,
       completenessFilled: frequency.completenessFilled,
       completenessTotal: frequency.completenessTotal,
@@ -1080,91 +1163,8 @@ function matchHistory(matches = []) {
   return { pairCounts, lastPartners, lastMatchedAt };
 }
 
-function listLength(value) {
-  return Array.isArray(value) ? value.length : (value ? 1 : 0);
-}
-
-function containsValue(value, expected) {
-  return Array.isArray(value) ? value.includes(expected) : value === expected;
-}
-
-function hasAnswer(value) {
-  if (Array.isArray(value)) return value.filter(Boolean).length > 0;
-  if (value && typeof value === "object") return Object.values(value).some(hasAnswer);
-  return value !== null && value !== undefined && value !== "";
-}
-
-function metricAnswered(metrics, key) {
-  return Number.isInteger(metrics?.[key]);
-}
-
-function profileClarity(profile) {
-  const checks = [
-    profile.displayName,
-    profile.gender,
-    profile.seeking,
-    profile.birthYear,
-    profile.identity,
-    profile.schoolType,
-    profile.location,
-    profile.hometownProvince,
-    profile.homeArea,
-    profile.discipline,
-    profile.intent,
-    profile.tempo,
-    profile.intimacy,
-    profile.intimacyTiming,
-    profile.socialBoundary,
-    profile.dietaryPreferences,
-    profile.monthlyExpense,
-    ...interestFieldNames.map(field => profile[field]),
-    profile.otherInterestText,
-    profile.mbtiMetrics,
-    profile.selfWeekends,
-    profile.selfStyle,
-    profile.height,
-    profile.appearanceFeel,
-    profile.hair,
-    profile.glasses,
-    profile.idealBirthYearMin || profile.idealBirthYearMax,
-    profile.idealIdentities,
-    profile.idealLocations,
-    profile.idealHometownRegions,
-    profile.idealHomeAreas,
-    profile.idealDisciplines,
-    profile.idealIntent,
-    profile.idealTempo,
-    profile.idealIntimacy,
-    profile.idealIntimacyTiming,
-    profile.idealSocialBoundary,
-    profile.idealMbtiMetrics,
-    profile.idealWeekends,
-    profile.idealStyle,
-    profile.idealHeight,
-    profile.idealAppearanceFeel,
-    profile.idealHair,
-    profile.idealGlasses,
-    profile.selfIntro,
-    profile.contactValue
-  ];
-  const metricKeys = ["warmth", "ambition", "decision", "novelty", "schedule", "marriage", "fertility"];
-  const metricChecks = [
-    ...metricKeys.map(key => metricAnswered(profile.selfMetrics, key)),
-    ...metricKeys.map(key => metricAnswered(profile.idealMetrics, key))
-  ];
-  const total = checks.length + metricChecks.length;
-  const filled = checks.filter(hasAnswer).length + metricChecks.filter(Boolean).length;
-  const ratio = total ? filled / total : 0;
-  return {
-    filled,
-    total,
-    ratio,
-    clarityWeight: Math.round(ratio * 40)
-  };
-}
-
-function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map()) {
-  const factors = profileWeightFactors(profile, profiles, history, now);
+function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map(), rankContext = profileRankContext(profiles)) {
+  const factors = profileWeightFactors(profile, profiles, history, now, rankContext);
   const { lastAt, daysSince, clarity, completeness, personalWeight } = factors;
   const allocation = expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, now);
   const interval = allocation.intervalDays;
@@ -1194,6 +1194,10 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
     clarityRatio: Number(clarity.ratio.toFixed(3)),
     clarityFilled: clarity.filled,
     clarityTotal: clarity.total,
+    precisionRawRatio: factors.precisionRawRatio,
+    precisionRankRatio: factors.precisionRankRatio,
+    scarcityRawRatio: factors.scarcityRawRatio,
+    scarcityRankRatio: factors.scarcityRankRatio,
     completenessRatio: Number(completeness.ratio.toFixed(3)),
     completenessFilled: completeness.filled,
     completenessTotal: completeness.total,
@@ -1209,9 +1213,9 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
   };
 }
 
-function genderRanksFor(profiles, history, settings, now = Date.now()) {
+function genderRanksFor(profiles, history, settings, now = Date.now(), rankContext = profileRankContext(profiles)) {
   const preliminary = profiles.map(profile => {
-    const factors = profileWeightFactors(profile, profiles, history, now);
+    const factors = profileWeightFactors(profile, profiles, history, now, rankContext);
     return { id: profile.id, gender: profile.gender || "未填写", personalWeight: factors.personalWeight };
   });
   const ranks = new Map();
@@ -1227,8 +1231,9 @@ function genderRanksFor(profiles, history, settings, now = Date.now()) {
 function frequencyMapFor(profiles, matches, settings) {
   const history = matchHistory(matches);
   const now = Date.now();
-  const ranks = genderRanksFor(profiles, history, settings, now);
-  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now, ranks)]));
+  const rankContext = profileRankContext(profiles);
+  const ranks = genderRanksFor(profiles, history, settings, now, rankContext);
+  return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now, ranks, rankContext)]));
 }
 
 function mbtiMetricScore(a, b) {
@@ -1338,6 +1343,25 @@ function bestMatchesFor(profile, profiles) {
     }));
 }
 
+function selectedCandidateMatches(candidates, activePool, targetCount = 10) {
+  const selected = [];
+  const selectedKeys = new Set();
+  const addCandidate = candidate => {
+    if (!candidate) return;
+    const key = pairKey(candidate.left.id, candidate.right.id);
+    if (selectedKeys.has(key)) return;
+    selected.push(candidate);
+    selectedKeys.add(key);
+  };
+  candidates.slice(0, targetCount).forEach(addCandidate);
+  const selectedParticipantIds = () => new Set(selected.flatMap(item => [item.left.id, item.right.id]));
+  for (const profile of activePool.filter(item => item.gender === "女")) {
+    if (selectedParticipantIds().has(profile.id)) continue;
+    addCandidate(candidates.find(item => item.left.id === profile.id || item.right.id === profile.id));
+  }
+  return selected.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
+}
+
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
   const publishedParticipantIds = new Set(matches
     .filter(match => match.status === "published" && match.roundId === roundId)
@@ -1371,7 +1395,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
     }
   }
   candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
-  for (const best of candidates.slice(0, 10)) {
+  for (const best of selectedCandidateMatches(candidates, activePool, 10)) {
     const leftFrequency = frequencies.get(best.left.id);
     const rightFrequency = frequencies.get(best.right.id);
     const boundaryWarnings = matchBoundaryWarnings(best.left, best.right);
@@ -1445,11 +1469,16 @@ function ensureDailyDraftMatches(data) {
   const today = new Date().toISOString().slice(0, 10);
   const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === "daily-weight-v2-doc");
   if (hasTodayDraft) return false;
+  const generated = replaceRoundDraftMatches(data, roundId);
+  return generated.length > 0;
+}
+
+function replaceRoundDraftMatches(data, roundId) {
   const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
   data.matches = data.matches
     .filter(match => !(match.roundId === roundId && match.status === "draft"))
     .concat(generated);
-  return generated.length > 0;
+  return generated;
 }
 
 function matchPreview(left, right, matches, settings, profiles = [left, right]) {
@@ -1728,6 +1757,7 @@ async function handleApi(req, res, url) {
     data.verifications = data.verifications.filter(item => item.email !== email);
     data.verifications.push({
       email,
+      purpose: "register",
       codeHash: hashCode(code),
       expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       attempts: 0
@@ -1737,6 +1767,39 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, {
       ok: true,
       message: delivery.delivered ? "验证码已发送，请查收邮箱。" : "本地开发模式：验证码已显示在页面上。",
+      devCode: delivery.devCode
+    });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/request-reset-code") {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const email = normalizeEmail(body.email);
+    if (body.sliderPassed !== true) {
+      return sendJson(res, 400, { error: "请先完成滑动安全验证。" });
+    }
+    if (!isAllowedEmail(email)) {
+      return sendJson(res, 400, { error: "仅支持 10 位数字 + @stu.pku.edu.cn 或 10 位数字 + @pku.edu.cn 邮箱。" });
+    }
+    if (email === ADMIN_EMAIL) {
+      return sendJson(res, 400, { error: "管理员密码请在服务器环境变量中修改。" });
+    }
+    if (!data.users.some(user => user.email === email && user.passwordHash)) {
+      return sendJson(res, 404, { error: "该邮箱还没有注册账号。" });
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    data.verifications = data.verifications.filter(item => item.email !== email);
+    data.verifications.push({
+      email,
+      purpose: "reset",
+      codeHash: hashCode(code),
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      attempts: 0
+    });
+    const delivery = await sendVerificationEmail(email, code);
+    await writeJson(DATA_FILE, data);
+    return sendJson(res, 200, {
+      ok: true,
+      message: delivery.delivered ? "重置密码验证码已发送，请查收邮箱。" : "本地开发模式：验证码已显示在页面上。",
       devCode: delivery.devCode
     });
   }
@@ -1792,6 +1855,9 @@ async function handleApi(req, res, url) {
     if (!record || new Date(record.expiresAt) <= new Date()) {
       return sendJson(res, 400, { error: "验证码不存在或已过期。" });
     }
+    if ((record.purpose || "register") !== "register") {
+      return sendJson(res, 400, { error: "请使用注册验证码完成注册。" });
+    }
     record.attempts += 1;
     if (record.attempts > 5 || record.codeHash !== hashCode(code)) {
       await writeJson(DATA_FILE, data);
@@ -1809,6 +1875,39 @@ async function handleApi(req, res, url) {
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString()
     });
     data.verifications = data.verifications.filter(item => item.email !== email);
+    await writeJson(DATA_FILE, data);
+    return sendJson(res, 200, { token, email });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const email = normalizeEmail(body.email);
+    const code = cleanText(body.code, 12);
+    const password = String(body.password || "");
+    if (password.length < 8) {
+      return sendJson(res, 400, { error: "请设置至少 8 位新密码。" });
+    }
+    const user = data.users.find(item => item.email === email && item.passwordHash);
+    if (!user) return sendJson(res, 404, { error: "该邮箱还没有注册账号。" });
+    const record = data.verifications.find(item => item.email === email);
+    if (!record || (record.purpose || "register") !== "reset" || new Date(record.expiresAt) <= new Date()) {
+      return sendJson(res, 400, { error: "重置验证码不存在或已过期。" });
+    }
+    record.attempts += 1;
+    if (record.attempts > 5 || record.codeHash !== hashCode(code)) {
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 400, { error: "验证码不正确。" });
+    }
+    user.passwordHash = hashPassword(password);
+    user.verifiedAt = user.verifiedAt || new Date().toISOString();
+    data.verifications = data.verifications.filter(item => item.email !== email);
+    const token = makeToken();
+    data.userSessions.push({
+      token,
+      email,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString()
+    });
     await writeJson(DATA_FILE, data);
     return sendJson(res, 200, { token, email });
   }
@@ -1887,8 +1986,7 @@ async function handleApi(req, res, url) {
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/generate") {
       const roundId = currentRound(new Date(), data.settings).id;
-      const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
-      data.matches = data.matches.filter(match => !(match.roundId === roundId && match.status === "draft")).concat(generated);
+      const generated = replaceRoundDraftMatches(data, roundId);
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { matches: serializeAdminMatches(generated, data.profiles, data.settings, data.matches) });
     }
@@ -1971,6 +2069,7 @@ async function handleApi(req, res, url) {
           || item.status !== "draft"
           || (!blockedIds.has(item.leftId) && !blockedIds.has(item.rightId))
         );
+        replaceRoundDraftMatches(data, match.roundId || currentRound(new Date(), data.settings).id);
       }
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings, data.matches)[0] });

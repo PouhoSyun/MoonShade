@@ -1825,6 +1825,8 @@ textarea:focus {
 }
 
 .slide-track {
+  --slide-inset: 3px;
+  --slide-handle-size: 42px;
   position: relative;
   height: 48px;
   overflow: hidden;
@@ -1836,17 +1838,18 @@ textarea:focus {
 .slide-track span {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 46px;
+  width: calc(var(--slide-inset) + var(--slide-handle-size));
   background: linear-gradient(90deg, rgba(212, 182, 111, 0.34), rgba(143, 167, 173, 0.38));
+  border-radius: inherit;
 }
 
 .slide-handle {
   position: absolute;
   z-index: 2;
-  top: 3px;
-  left: 3px;
-  width: 42px;
-  height: 42px;
+  top: var(--slide-inset);
+  left: var(--slide-inset);
+  width: var(--slide-handle-size);
+  height: var(--slide-handle-size);
   border: 0;
   border-radius: 5px;
   background: white;
@@ -1875,9 +1878,19 @@ textarea:focus {
   color: #45695a;
 }
 
-[data-request-code]:disabled {
+[data-request-code]:disabled,
+[data-request-reset-code]:disabled {
   opacity: 0.54;
   cursor: not-allowed;
+}
+
+.ghost-action {
+  min-height: 38px;
+  border: 0;
+  padding: 0 10px;
+  color: rgba(247, 241, 215, 0.82);
+  background: transparent;
+  font-weight: 700;
 }
 
 .mirror-frame {

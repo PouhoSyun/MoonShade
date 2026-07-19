@@ -62,12 +62,20 @@
               <div class="auth-mode" data-login-mode hidden>
                 <input name="loginPassword" data-login-password type="password" placeholder="输入密码" autocomplete="current-password" />
                 <button class="secondary-action" type="button" data-login-button>登录</button>
+                <button class="ghost-action" type="button" data-forgot-password>忘记密码</button>
               </div>
               <div class="auth-mode" data-register-mode hidden>
                 <button class="secondary-action" type="button" data-request-code>发送验证码</button>
                 <input name="code" data-code-input placeholder="6 位验证码" inputmode="numeric" />
                 <input name="registerPassword" data-register-password type="password" placeholder="设置密码（至少 8 位）" autocomplete="new-password" />
                 <button class="secondary-action" type="button" data-verify-code>注册并登录</button>
+              </div>
+              <div class="auth-mode" data-reset-mode hidden>
+                <button class="secondary-action" type="button" data-request-reset-code>发送重置验证码</button>
+                <input name="resetCode" data-reset-code-input placeholder="6 位验证码" inputmode="numeric" />
+                <input name="resetPassword" data-reset-password type="password" placeholder="设置新密码（至少 8 位）" autocomplete="new-password" />
+                <button class="secondary-action" type="button" data-reset-password-button>重置并登录</button>
+                <button class="ghost-action" type="button" data-back-login>返回登录</button>
               </div>
               <div class="local-log" data-local-log hidden></div>
             </div>

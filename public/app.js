@@ -927,12 +927,20 @@ async function checkEmailAfterSlide() {
       state.authMode = result.exists ? "login" : "register";
       $("[data-login-mode]").hidden = !result.exists;
       $("[data-register-mode]").hidden = result.exists;
+      $("[data-reset-mode]").hidden = true;
       status.textContent = result.exists ? "该邮箱已注册，请输入密码登录。" : "该邮箱未注册，请发送验证码并设置密码。";
       appendAuthLog(result.exists ? `已检测到已有账号：${result.email}` : `未检测到账号：${result.email}，进入验证码注册。`);
     } catch (error) {
       status.textContent = error.message;
       appendAuthLog(error.message);
     }
+}
+
+function showAuthMode(mode) {
+  state.authMode = mode;
+  $("[data-login-mode]").hidden = mode !== "login";
+  $("[data-register-mode]").hidden = mode !== "register";
+  $("[data-reset-mode]").hidden = mode !== "reset";
 }
 
 function bindAuth() {
@@ -1008,6 +1016,59 @@ function bindAuth() {
       appendAuthLog(error.message);
     }
   });
+  $("[data-forgot-password]").addEventListener("click", () => {
+    const status = $("[data-auth-status]");
+    showAuthMode("reset");
+    status.textContent = "发送邮箱验证码后即可重置密码。";
+  });
+  $("[data-back-login]").addEventListener("click", () => {
+    showAuthMode("login");
+    $("[data-auth-status]").textContent = "请输入密码登录。";
+  });
+  $("[data-request-reset-code]").addEventListener("click", async () => {
+    const email = $("[data-email-input]").value.trim();
+    const status = $("[data-auth-status]");
+    const button = $("[data-request-reset-code]");
+    if (!state.sliderVerified) {
+      status.textContent = "请先完成滑动安全验证。";
+      return;
+    }
+    status.textContent = "正在发送重置验证码...";
+    button.disabled = true;
+    try {
+      const result = await api("/api/auth/request-reset-code", { method: "POST", body: JSON.stringify({ email, sliderPassed: true }) });
+      status.textContent = result.devCode
+        ? `${result.message} 验证码：${result.devCode}`
+        : (result.message || "重置验证码已发送。");
+      appendAuthLog(result.devCode ? `本地重置验证码：${result.devCode}` : "重置验证码发送请求已提交。");
+    } catch (error) {
+      status.textContent = error.message;
+      appendAuthLog(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $("[data-reset-password-button]").addEventListener("click", async () => {
+    const email = $("[data-email-input]").value.trim();
+    const code = $("[data-reset-code-input]").value.trim();
+    const password = $("[data-reset-password]").value;
+    const status = $("[data-auth-status]");
+    status.textContent = "正在重置密码...";
+    try {
+      const result = await api("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ email, code, password }) });
+      state.authToken = result.token;
+      state.email = result.email;
+      localStorage.setItem(authKey, result.token);
+      status.textContent = `已重置并登录：${result.email}`;
+      appendAuthLog(`密码重置成功：${result.email}`);
+      renderAuthState();
+      await loadMe();
+      navigate("survey");
+    } catch (error) {
+      status.textContent = error.message;
+      appendAuthLog(error.message);
+    }
+  });
   $("[data-verify-code]").addEventListener("click", async () => {
     const email = $("[data-email-input]").value.trim();
     const code = $("[data-code-input]").value.trim();
@@ -1040,12 +1101,30 @@ function bindSliderVerify() {
   let startX = 0;
   let max = 0;
 
+  function trackMetrics() {
+    const track = root.querySelector(".slide-track");
+    const inset = Number.parseFloat(getComputedStyle(handle).left) || 0;
+    const handleWidth = handle.offsetWidth || 42;
+    return {
+      trackWidth: track.clientWidth,
+      handleWidth,
+      inset,
+      max: Math.max(0, track.clientWidth - handleWidth - inset * 2)
+    };
+  }
+
+  function setFillWidth(offset) {
+    const metrics = trackMetrics();
+    const width = Math.min(metrics.trackWidth, metrics.inset + metrics.handleWidth + Math.max(0, offset));
+    fill.style.width = `${width}px`;
+  }
+
   function complete() {
-    max = root.querySelector(".slide-track").clientWidth - handle.clientWidth - 4;
+    max = trackMetrics().max;
     state.sliderVerified = true;
     root.classList.add("is-complete");
     handle.style.transform = `translateX(${Math.max(0, max)}px)`;
-    fill.style.width = `${Math.max(46, max + 46)}px`;
+    fill.style.width = "100%";
     label.textContent = "验证完成，正在检查账号";
     dragging = false;
     checkEmailAfterSlide();
@@ -1055,20 +1134,17 @@ function bindSliderVerify() {
     const clamped = Math.max(0, Math.min(max, value));
     const percent = max ? clamped / max : 0;
     handle.style.transform = `translateX(${clamped}px)`;
-    fill.style.width = `${Math.max(46, clamped + 46)}px`;
-    if (percent > 0.98) {
+    setFillWidth(clamped);
+    if (percent >= 0.995 || clamped >= max - 1) {
       complete();
     }
   }
 
-  root.addEventListener("click", () => {
-    if (!state.sliderVerified) complete();
-  });
   handle.addEventListener("pointerdown", event => {
     if (state.sliderVerified) return;
     dragging = true;
     startX = event.clientX;
-    max = root.querySelector(".slide-track").clientWidth - handle.clientWidth - 4;
+    max = trackMetrics().max;
     handle.setPointerCapture(event.pointerId);
   });
   handle.addEventListener("pointermove", event => {
@@ -1079,7 +1155,7 @@ function bindSliderVerify() {
     if (!dragging || state.sliderVerified) return;
     dragging = false;
     handle.style.transform = "translateX(0)";
-    fill.style.width = "46px";
+    setFillWidth(0);
   });
 }
 
@@ -1088,6 +1164,7 @@ function bindAuthReset() {
     state.authMode = "email";
     $("[data-login-mode]").hidden = true;
     $("[data-register-mode]").hidden = true;
+    $("[data-reset-mode]").hidden = true;
     if (state.sliderVerified) {
       clearTimeout(state.authCheckTimer);
       $("[data-auth-status]").textContent = "邮箱变更，正在重新检查...";
