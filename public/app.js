@@ -166,7 +166,7 @@ const interestFields = [
   ["otherInterests", "其他"]
 ];
 
-const pausedHomeMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请右侧点选。欢迎向朋友们推荐月影MoonShade，深表感谢！";
+const pausedHomeMessage = "已暂停匹配";
 const pausedStatusMessage = "此别满庭月色，盼形影不离。您的问卷已被托管，如需永久注销请移步首页。欢迎向朋友们推荐月影MoonShade，深表感谢！";
 
 const $ = selector => document.querySelector(selector);
@@ -307,13 +307,13 @@ function renderPersonalSchedule() {
   const note = $("[data-round-note]");
   if (note) {
     note.textContent = paused
-      ? pausedHomeMessage
+      ? pausedStatusMessage
       : (frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动");
   }
   const closeTime = $("[data-close-time]");
   if (closeTime) {
     closeTime.textContent = paused
-      ? pausedStatusMessage
+      ? "已暂停匹配"
       : frequency
       ? `个人下次分配参考：${formatDateOnly(frequency.expectedNextAllocationAt)}`
       : "个人下次分配参考：提交问卷后生成";
