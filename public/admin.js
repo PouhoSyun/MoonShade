@@ -7,6 +7,8 @@ const state = {
   profiles: [],
   matches: [],
   announcements: [],
+  community: {},
+  communityQrDraft: "",
   settings: null,
   round: null,
   selectedProfileId: "",
@@ -265,15 +267,17 @@ function logout() {
 
 async function loadAdmin() {
   if (!state.token) return;
-  const [profilesPayload, matchesPayload, settingsPayload, announcementsPayload] = await Promise.all([
+  const [profilesPayload, matchesPayload, settingsPayload, announcementsPayload, communityPayload] = await Promise.all([
     api(`/api/admin/profiles?adminToken=${encodeURIComponent(state.token)}`),
     api(`/api/admin/matches?adminToken=${encodeURIComponent(state.token)}`),
     api(`/api/admin/settings?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/announcements?adminToken=${encodeURIComponent(state.token)}`)
+    api(`/api/admin/announcements?adminToken=${encodeURIComponent(state.token)}`),
+    api(`/api/admin/community?adminToken=${encodeURIComponent(state.token)}`)
   ]);
   state.profiles = profilesPayload.profiles;
   state.matches = matchesPayload.matches;
   state.announcements = announcementsPayload.announcements || [];
+  state.community = communityPayload.community || {};
   state.settings = settingsPayload.settings;
   state.round = settingsPayload.round;
   if (!state.selectedProfileId && state.profiles.length) state.selectedProfileId = state.profiles[0].id;
@@ -310,6 +314,7 @@ function renderAdminView() {
   renderMatches();
   renderPublishedMatches();
   renderAnnouncements();
+  renderCommunity();
 }
 
 function renderSettings() {
@@ -351,6 +356,108 @@ function resetAnnouncementForm() {
   $("[data-announcement-title]").value = "";
   $("[data-announcement-body]").value = "";
   $("[data-announcement-message]").textContent = "";
+}
+
+function renderCommunity() {
+  const preview = $("[data-community-qr-preview]");
+  const empty = $("[data-community-qr-empty]");
+  if (!preview || !empty) return;
+  const source = state.communityQrDraft || state.community?.wechatQrImage || "";
+  preview.hidden = !source;
+  empty.hidden = Boolean(source);
+  if (source) preview.src = source;
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve("");
+      return;
+    }
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      reject(new Error("请上传 PNG、JPG 或 WebP 图片。"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("图片读取失败。"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("图片解析失败。"));
+      image.onload = () => {
+        const maxSize = 960;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.86));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleCommunityFileChange(event) {
+  const message = $("[data-community-message]");
+  message.textContent = "正在读取图片...";
+  try {
+    state.communityQrDraft = await imageFileToDataUrl(event.target.files?.[0]);
+    renderCommunity();
+    message.textContent = "图片已读取，点击保存二维码后生效。";
+  } catch (error) {
+    state.communityQrDraft = "";
+    renderCommunity();
+    message.textContent = error.message;
+  }
+}
+
+async function saveCommunityQr() {
+  const message = $("[data-community-message]");
+  const image = state.communityQrDraft || state.community?.wechatQrImage || "";
+  if (!image) {
+    message.textContent = "请先选择二维码图片。";
+    return;
+  }
+  message.textContent = "正在保存二维码...";
+  try {
+    const payload = await api("/api/admin/community/save", {
+      method: "POST",
+      body: JSON.stringify({
+        adminToken: state.token,
+        community: { wechatQrImage: image }
+      })
+    });
+    state.community = payload.community || {};
+    state.communityQrDraft = "";
+    const input = $("[data-community-qr-input]");
+    if (input) input.value = "";
+    renderCommunity();
+    message.textContent = "微信群二维码已保存。";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function deleteCommunityQr() {
+  if (!confirm("确定删除首页微信交流群二维码吗？")) return;
+  const message = $("[data-community-message]");
+  message.textContent = "正在删除二维码...";
+  try {
+    const payload = await api("/api/admin/community/delete", {
+      method: "POST",
+      body: JSON.stringify({ adminToken: state.token })
+    });
+    state.community = payload.community || {};
+    state.communityQrDraft = "";
+    const input = $("[data-community-qr-input]");
+    if (input) input.value = "";
+    renderCommunity();
+    message.textContent = "二维码已删除。";
+  } catch (error) {
+    message.textContent = error.message;
+  }
 }
 
 async function saveAnnouncement() {
@@ -784,6 +891,9 @@ $("[data-delete-demo-users]").addEventListener("click", deleteDemoUsers);
 $("[data-save-settings]").addEventListener("click", saveSettings);
 $("[data-save-announcement]").addEventListener("click", saveAnnouncement);
 $("[data-new-announcement]").addEventListener("click", resetAnnouncementForm);
+$("[data-community-qr-input]").addEventListener("change", handleCommunityFileChange);
+$("[data-save-community-qr]").addEventListener("click", saveCommunityQr);
+$("[data-delete-community-qr]").addEventListener("click", deleteCommunityQr);
 document.addEventListener("click", event => {
   const viewButton = event.target.closest("[data-admin-view]");
   if (viewButton) {

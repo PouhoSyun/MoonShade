@@ -70,7 +70,11 @@ const defaultData = {
       title: "MoonShade 内测开放",
       body: "本轮先开放基础问卷与自动匹配。问卷题目会逐步增加，已提交的信息可随时更新。"
     }
-  ]
+  ],
+  community: {
+    wechatQrImage: "",
+    updatedAt: ""
+  }
 };
 
 async function ensureDataFile() {
@@ -108,7 +112,7 @@ function readBody(req) {
     let body = "";
     req.on("data", chunk => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 3_000_000) {
         req.destroy();
         reject(new Error("请求体过大"));
       }
@@ -150,7 +154,11 @@ function normalizeData(data) {
       ...defaultData.settings,
       ...(data.settings && typeof data.settings === "object" ? data.settings : {})
     },
-    announcements: Array.isArray(data.announcements) ? data.announcements : defaultData.announcements
+    announcements: Array.isArray(data.announcements) ? data.announcements : defaultData.announcements,
+    community: {
+      ...defaultData.community,
+      ...(data.community && typeof data.community === "object" ? data.community : {})
+    }
   };
 }
 
@@ -444,6 +452,21 @@ function cleanAnnouncement(input = {}, existing = {}) {
     id: existing.id || cleanText(input.id, 80) || crypto.randomUUID(),
     title: cleanText(input.title, 60),
     body: cleanText(input.body, 300)
+  };
+}
+
+function cleanCommunity(input = {}, existing = defaultData.community) {
+  const image = cleanText(input.wechatQrImage, 2_000_000);
+  if (image && !/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) {
+    throw new Error("请上传 PNG、JPG 或 WebP 格式的二维码图片。");
+  }
+  if (image && image.length > 1_600_000) {
+    throw new Error("二维码图片太大，请压缩后再上传。");
+  }
+  return {
+    ...existing,
+    wechatQrImage: image,
+    updatedAt: image ? new Date().toISOString() : ""
   };
 }
 
@@ -1967,6 +1990,23 @@ async function handleApi(req, res, url) {
     if (req.method === "GET" && url.pathname === "/api/admin/announcements") {
       return sendJson(res, 200, { announcements: data.announcements || [] });
     }
+    if (req.method === "GET" && url.pathname === "/api/admin/community") {
+      return sendJson(res, 200, { community: data.community || defaultData.community });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/community/save") {
+      try {
+        data.community = cleanCommunity(adminBody.community || adminBody, data.community || defaultData.community);
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message });
+      }
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, { community: data.community });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/community/delete") {
+      data.community = { ...defaultData.community };
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, { community: data.community });
+    }
     if (req.method === "POST" && url.pathname === "/api/admin/announcements/save") {
       const source = adminBody.announcement || adminBody;
       const existing = (data.announcements || []).find(item => item.id === cleanText(source.id, 80));
@@ -2090,7 +2130,8 @@ async function handleApi(req, res, url) {
         publishedMatches: publishedMatchCount,
         matchedPeople: publishedMatchCount * 2
       },
-      announcements: data.announcements || []
+      announcements: data.announcements || [],
+      community: data.community || defaultData.community
     });
   }
 

@@ -18,6 +18,7 @@
       </a>
       <nav>
         <button class="nav-button is-active" data-nav="home" title="首页">⌂ <span>首页</span></button>
+        <button class="nav-button" type="button" data-community-open title="微信群">☷ <span>微信群</span></button>
         <button class="nav-button" data-nav="dashboard" title="状态">◌ <span>状态</span></button>
         <button class="nav-button" data-nav="survey" title="问卷">▤ <span>问卷</span></button>
         <button class="nav-button" data-nav="results" title="结果">◇ <span>结果</span></button>
@@ -212,6 +213,19 @@
         <div class="match-list" data-match-list></div>
       </section>
     </main>
+
+    <div class="community-modal" data-community-modal hidden>
+      <div class="community-modal-backdrop" data-community-close></div>
+      <section class="community-dialog" role="dialog" aria-modal="true" aria-label="微信交流群">
+        <button class="community-close" type="button" data-community-close aria-label="关闭">×</button>
+        <p class="eyebrow">MoonShade Community</p>
+        <h2>微信交流群</h2>
+        <div class="community-qr-frame">
+          <img data-community-qr alt="MoonShade 微信交流群二维码" hidden />
+          <p data-community-empty>二维码待管理员更新。</p>
+        </div>
+      </section>
+    </div>
 
     <script>
       (() => {

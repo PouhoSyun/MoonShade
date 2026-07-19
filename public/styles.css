@@ -2883,6 +2883,84 @@ main,
   text-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 }
 
+.community-modal[hidden] {
+  display: none;
+}
+
+.community-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.community-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 10, 24, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.community-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 92vw);
+  padding: 28px;
+  border: 1px solid rgba(231, 199, 98, 0.28);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 18% 0, rgba(231, 199, 98, 0.18), transparent 42%),
+    rgba(8, 16, 39, 0.96);
+  color: #fff8dc;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+}
+
+.community-dialog h2 {
+  margin: 4px 0 18px;
+}
+
+.community-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 248, 220, 0.22);
+  border-radius: 999px;
+  color: #fff8dc;
+  background: rgba(255, 248, 220, 0.08);
+  font-size: 22px;
+}
+
+.community-qr-frame {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  padding: 16px;
+  border: 1px solid rgba(255, 248, 220, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 248, 220, 0.08);
+}
+
+.community-qr-frame img {
+  width: min(280px, 100%);
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 6px;
+  background: white;
+}
+
+.community-qr-frame p {
+  margin: 0;
+  color: rgba(255, 248, 220, 0.72);
+}
+
+.has-modal-open {
+  overflow: hidden;
+}
+
 @media (max-width: 720px) {
   .hero-kicker {
     flex-wrap: wrap;
@@ -2921,11 +2999,40 @@ main,
   gap: 14px;
 }
 
-.admin-announcement-panel label {
+.admin-announcement-panel label,
+.admin-community-panel label {
   display: grid;
   gap: 7px;
   color: #2d3348;
   font-weight: 800;
+}
+
+.admin-community-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.community-admin-preview {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 14px;
+  border: 1px solid rgba(157, 146, 137, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.community-admin-preview img {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 6px;
+  background: white;
+}
+
+.community-admin-preview p {
+  margin: 0;
+  color: #6c7280;
 }
 
 .admin-inline-actions {

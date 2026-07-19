@@ -98,6 +98,23 @@
             <p class="form-message" data-announcement-message></p>
           </section>
 
+          <section class="panel admin-community-panel">
+            <p class="eyebrow">Community</p>
+            <h2>微信交流群</h2>
+            <label>二维码图片
+              <input data-community-qr-input type="file" accept="image/png,image/jpeg,image/webp" />
+            </label>
+            <div class="community-admin-preview">
+              <img data-community-qr-preview alt="当前微信交流群二维码" hidden />
+              <p data-community-qr-empty>尚未上传二维码。</p>
+            </div>
+            <div class="admin-inline-actions">
+              <button class="secondary-action" type="button" data-save-community-qr>保存二维码</button>
+              <button class="secondary-action danger-action" type="button" data-delete-community-qr>删除二维码</button>
+            </div>
+            <p class="form-message" data-community-message></p>
+          </section>
+
           <section class="admin-data-grid">
             <section class="panel">
               <h2>已提交问卷</h2>

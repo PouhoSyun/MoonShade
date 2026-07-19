@@ -136,6 +136,7 @@ const state = {
   authMode: "email",
   profile: null,
   round: null,
+  community: {},
   pageIndex: 0,
   selected: {},
   authCheckTimer: null
@@ -335,16 +336,30 @@ function navigate(route, options = {}) {
 
 function bindNavigation() {
   document.addEventListener("click", event => {
+    const communityOpen = event.target.closest("[data-community-open]");
+    if (communityOpen) {
+      event.preventDefault();
+      openCommunityModal();
+      return;
+    }
+    if (event.target.closest("[data-community-close]")) {
+      closeCommunityModal();
+      return;
+    }
     const item = event.target.closest("[data-nav]");
     if (!item) return;
     event.preventDefault();
     navigate(item.dataset.nav);
   });
   window.addEventListener("hashchange", () => navigate(routeFromHash(), { syncHash: false }));
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeCommunityModal();
+  });
 }
 
 function renderRound(payload) {
   state.round = payload.round;
+  state.community = payload.community || {};
   const interval = payload.settings?.matchIntervalDays || payload.round.intervalDays || 3;
   const note = payload.settings?.matchWindowNote || payload.round.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。";
   $("[data-round-note]").textContent = `原则上每 ${interval} 天匹配一次，具体会随画像分布浮动`;
@@ -370,6 +385,32 @@ function renderRound(payload) {
     <article class="announcement"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.body)}</span></article>
   `).join("");
   renderPersonalSchedule();
+  renderCommunityModal();
+}
+
+function renderCommunityModal() {
+  const image = $("[data-community-qr]");
+  const empty = $("[data-community-empty]");
+  const source = state.community?.wechatQrImage || "";
+  if (!image || !empty) return;
+  image.hidden = !source;
+  empty.hidden = Boolean(source);
+  if (source) image.src = source;
+}
+
+function openCommunityModal() {
+  renderCommunityModal();
+  const modal = $("[data-community-modal]");
+  if (!modal) return;
+  modal.hidden = false;
+  document.body.classList.add("has-modal-open");
+}
+
+function closeCommunityModal() {
+  const modal = $("[data-community-modal]");
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
+  document.body.classList.remove("has-modal-open");
 }
 
 function optionButton(value, selected, fieldName, multi = false, label = value) {
