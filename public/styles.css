@@ -1825,8 +1825,8 @@ textarea:focus {
 }
 
 .slide-track {
-  --slide-inset: 3px;
-  --slide-handle-size: 42px;
+  --slide-inset: 0px;
+  --slide-handle-size: 48px;
   position: relative;
   height: 48px;
   overflow: hidden;
@@ -1851,7 +1851,7 @@ textarea:focus {
   width: var(--slide-handle-size);
   height: var(--slide-handle-size);
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: white;
   box-shadow: 0 8px 22px rgba(39, 43, 56, 0.18);
   color: #68706e;
