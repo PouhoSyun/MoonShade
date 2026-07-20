@@ -43,6 +43,44 @@ function formatValue(value) {
   return value ?? "";
 }
 
+function sliderPercent(value, reverse = false) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  const clamped = Math.max(-3, Math.min(3, number));
+  const ratio = reverse ? (3 - clamped) / 6 : (clamped + 3) / 6;
+  return `${Math.round(ratio * 100)}%`;
+}
+
+function formatMbtiMetrics(metrics = {}) {
+  if (!metrics || typeof metrics !== "object") return "";
+  return [
+    ["E", sliderPercent(metrics.ei, true)],
+    ["N", sliderPercent(metrics.sn)],
+    ["F", sliderPercent(metrics.tf)],
+    ["P", sliderPercent(metrics.jp)]
+  ].filter(([, value]) => value).map(([label, value]) => `${label}${value}`).join("、");
+}
+
+function formatScaleMetrics(metrics = {}) {
+  if (!metrics || typeof metrics !== "object") return "";
+  const labels = {
+    warmth: "温暖",
+    ambition: "进取",
+    decision: "逻辑",
+    novelty: "新鲜",
+    schedule: "早起",
+    marriage: "婚姻",
+    fertility: "生育"
+  };
+  return Object.entries(labels)
+    .map(([key, label]) => {
+      const value = sliderPercent(metrics[key]);
+      return value ? `${label}${value}` : "";
+    })
+    .filter(Boolean)
+    .join("、");
+}
+
 function detailBlock(title, items) {
   return `
     <section class="detail-block">
@@ -568,10 +606,10 @@ function renderProfileDetail() {
       ["可接受对方交际圈边界", profile.idealSocialBoundary],
       ["饮食口味喜好", profile.dietaryPreferences],
       ["参考月生活开支", profile.monthlyExpense ? `${profile.monthlyExpense} 元/月` : ""],
-      ["MBTI 四维", profile.mbtiMetrics],
-      ["期待 MBTI 四维", profile.idealMbtiMetrics],
-      ["自我气质量表", profile.selfMetrics],
-      ["期待对方气质量表", profile.idealMetrics]
+      ["MBTI 四维", formatMbtiMetrics(profile.mbtiMetrics)],
+      ["期待 MBTI 四维", formatMbtiMetrics(profile.idealMbtiMetrics)],
+      ["自我气质量表", formatScaleMetrics(profile.selfMetrics)],
+      ["期待对方气质量表", formatScaleMetrics(profile.idealMetrics)]
     ])}
     ${detailBlock("内外特征", [
       ["周末场景", profile.selfWeekends],
