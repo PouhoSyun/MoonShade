@@ -1,13 +1,13 @@
 const tokenKey = "moonshade.token";
 const authKey = "moonshade.authToken";
-window.__MOONSHADE_APP_VERSION__ = "20260716-hero-logo";
+window.__MOONSHADE_APP_VERSION__ = "20260720-ruc-school";
 
 const optionSets = {
   genders: ["女", "男", "非二元", "暂不透露"],
   seeking: ["女", "男", "非二元", "不限"],
   years: Array.from({ length: 21 }, (_, index) => String(1990 + index)),
   identities: ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"],
-  schoolTypes: ["北京大学"],
+  schoolTypes: ["北京大学", "中国人民大学"],
   locations: ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"],
   provinces: ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"],
   regions: ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"],
@@ -62,7 +62,7 @@ const pages = [
       [{ type: "chips", name: "gender", label: "我的性别", options: optionSets.genders }, { type: "chips", multi: true, name: "seeking", label: "希望认识的性别", options: optionSets.seeking }],
       [{ type: "select", name: "birthYear", label: "出生年", options: optionSets.years }, { type: "yearRange", name: "idealBirthYear", label: "可接受出生年区间", options: optionSets.years }],
       [{ type: "chips", name: "identity", label: "目前身份", options: optionSets.identities }, { type: "chips", multi: true, name: "idealIdentities", label: "可接受身份", options: optionSets.identities }],
-      [{ type: "chips", name: "schoolType", label: "院校背景", options: optionSets.schoolTypes }, null],
+      [{ type: "chips", name: "schoolType", label: "院校背景", options: optionSets.schoolTypes }, { type: "chips", multi: true, name: "idealSchoolTypes", label: "可接受院校背景", options: optionSets.schoolTypes }],
       [{ type: "chips", multi: true, name: "location", label: "所在校区", options: optionSets.locations }, { type: "chips", multi: true, name: "idealLocations", label: "可接受校区", options: optionSets.locations }],
       [{ type: "select", name: "hometownProvince", label: "家乡省份", options: optionSets.provinces }, { type: "chips", multi: true, name: "idealHometownRegions", label: "可接受家乡地区", options: optionSets.regions }],
       [{ type: "chips", name: "homeArea", label: "城市 / 乡村", options: optionSets.homeAreas }, { type: "chips", multi: true, name: "idealHomeAreas", label: "可接受成长环境", options: optionSets.homeAreas }],
@@ -254,7 +254,7 @@ function requiredCompletionRatio(source = {}) {
     hasSelection(source.seeking),
     Boolean(source.birthYear || source.age),
     Boolean(source.identity || source.stage),
-    source.schoolType === "北京大学",
+    valueInOptions(source.schoolType, optionSets.schoolTypes),
     Boolean(hasSelection(source.location) || source.city),
     Boolean(source.intent),
     Boolean(source.tempo),
@@ -871,7 +871,7 @@ function requiredVolumeNumbers(source = {}) {
     || !hasSelection(source.seeking)
     || !(source.birthYear || source.age)
     || !(source.identity || source.stage)
-    || source.schoolType !== "北京大学"
+    || !valueInOptions(source.schoolType, optionSets.schoolTypes)
     || !(hasSelection(source.location) || source.city)) {
     missing.add(1);
   }
@@ -921,7 +921,7 @@ function fillForm(profile) {
   if (supplementNeeded.length && state.pageIndex === 0) state.pageIndex = 1;
   [
     "displayName", "gender", "birthYear", "identity", "schoolType", "location", "discipline", "seeking",
-    "idealBirthYearMin", "idealBirthYearMax", "idealIdentities", "idealLocations", "hometownProvince", "idealHometownRegions",
+    "idealBirthYearMin", "idealBirthYearMax", "idealIdentities", "idealSchoolTypes", "idealLocations", "hometownProvince", "idealHometownRegions",
     "homeArea", "idealHomeAreas", "idealDisciplines", "intent", "idealIntent", "tempo", "idealTempo",
     "intimacy", "idealIntimacy", "intimacyTiming", "idealIntimacyTiming", "socialBoundary", "idealSocialBoundary",
     "mbti", "mbtiMetrics", "idealMbtiMetrics", "selfMetrics", "idealMetrics", "selfWeekends", "idealWeekends",
@@ -993,7 +993,7 @@ async function checkEmailAfterSlide() {
       return;
     }
     if (!email) {
-      status.textContent = "请输入北大邮箱。";
+      status.textContent = "请输入支持的校内邮箱。";
       return;
     }
     status.textContent = "正在检查账号...";
@@ -1269,7 +1269,7 @@ function bindAuthReset() {
       $("[data-auth-status]").textContent = "邮箱变更，正在重新检查...";
       state.authCheckTimer = setTimeout(checkEmailAfterSlide, 450);
     } else {
-      $("[data-auth-status]").textContent = "请输入北大邮箱，完成滑动验证后继续。";
+      $("[data-auth-status]").textContent = "请输入支持的校内邮箱，完成滑动验证后继续。";
     }
   });
 }
@@ -1308,7 +1308,7 @@ async function loadMe() {
 async function loadMatches() {
   const list = $("[data-match-list]");
   if (!state.authToken && !state.token) {
-    list.innerHTML = `<div class="empty-state">还没有提交问卷。先验证北大邮箱并填写问卷。</div>`;
+    list.innerHTML = `<div class="empty-state">还没有提交问卷。先验证校内邮箱并填写问卷。</div>`;
     return;
   }
   list.innerHTML = `<div class="empty-state">正在计算匹配结果...</div>`;

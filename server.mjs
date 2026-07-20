@@ -40,6 +40,8 @@ const DATA_FILE = process.env.MOONSHADE_DATA_FILE || join(__dirname, "data", "mo
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_EMAIL = process.env.MOONSHADE_ADMIN_EMAIL || "moodylitchee@stu.pku.edu.cn";
 const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
+const ALLOWED_SCHOOL_TYPES = ["北京大学", "中国人民大学"];
+const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 @ruc.edu.cn 邮箱。";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -171,7 +173,7 @@ function normalizeEmail(email) {
 function isAllowedEmail(email) {
   const normalized = normalizeEmail(email);
   if (normalized === ADMIN_EMAIL) return true;
-  return /^\d{10}@(stu\.)?pku\.edu\.cn$/.test(normalized);
+  return /^\d{10}@(stu\.)?pku\.edu\.cn$/.test(normalized) || /^[a-z0-9._%+-]+@ruc\.edu\.cn$/.test(normalized);
 }
 
 function makeToken() {
@@ -354,7 +356,7 @@ async function sendSmtpMail({ to, subject, text }) {
 }
 
 async function sendVerificationEmail(email, code) {
-  const subject = "MoonShade 北大邮箱验证码";
+  const subject = "MoonShade 校内邮箱验证码";
   const body = `你的 MoonShade 验证码是：${code}\n\n10 分钟内有效。若非本人操作，请忽略这封邮件。`;
   if (process.env.MOONSHADE_MAIL_TRANSPORT === "smtp") {
     await sendSmtpMail({ to: email, subject, text: body });
@@ -526,7 +528,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedGenders = ["女", "男", "非二元", "暂不透露"];
   const allowedSeek = ["女", "男", "非二元", "不限"];
   const allowedIdentities = ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"];
-  const allowedSchoolTypes = ["北京大学"];
+  const allowedSchoolTypes = ALLOWED_SCHOOL_TYPES;
   const allowedLocations = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"];
   const allowedProvinces = ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"];
   const allowedRegions = ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"];
@@ -555,12 +557,12 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     gender: allowedGenders.includes(input.gender) ? input.gender : "",
     seeking: cleanList(input.seeking, allowedSeek),
     city: cleanText(input.city || cleanList(input.location, allowedLocations).join("、"), 40),
-    school: "北京大学",
+    school: allowedSchoolTypes.includes(input.schoolType) ? input.schoolType : "",
     department: normalizeDiscipline(input.department || input.discipline),
     stage: cleanText(input.stage || input.identity, 40),
     identity: allowedIdentities.includes(input.identity) ? input.identity : "",
     idealIdentities: cleanList(input.idealIdentities, allowedIdentities),
-    schoolType: input.schoolType === "北京大学" ? "北京大学" : "",
+    schoolType: allowedSchoolTypes.includes(input.schoolType) ? input.schoolType : "",
     idealSchoolTypes: cleanList(input.idealSchoolTypes, allowedSchoolTypes),
     location: cleanList(input.location, allowedLocations),
     idealLocations: cleanList(input.idealLocations, allowedLocations),
@@ -623,7 +625,7 @@ function validateProfile(profile) {
   if (profile.seeking.length === 0) missing.push("希望匹配的对象性别");
   if (!profile.birthYear && !profile.age) missing.push("出生年");
   if (!profile.identity && !profile.stage) missing.push("目前身份");
-  if (profile.schoolType !== "北京大学") missing.push("院校背景（北京大学）");
+  if (!ALLOWED_SCHOOL_TYPES.includes(profile.schoolType)) missing.push("院校背景");
   if ((!Array.isArray(profile.location) || profile.location.length === 0) && !profile.city) missing.push("所在校区");
   if (!profile.intent) missing.push("匹配期待");
   if (!profile.tempo) missing.push("沟通节奏");
@@ -649,7 +651,7 @@ function profileCompleteness(profile) {
     profile.seeking?.length > 0,
     Boolean(profile.birthYear || profile.age),
     Boolean(profile.identity || profile.stage),
-    profile.schoolType === "北京大学",
+    ALLOWED_SCHOOL_TYPES.includes(profile.schoolType),
     Boolean(profile.location?.length || profile.city),
     Boolean(profile.intent),
     Boolean(profile.tempo),
@@ -1794,7 +1796,7 @@ async function handleApi(req, res, url) {
       return sendJson(res, 400, { error: "请先完成滑动安全验证。" });
     }
     if (!isAllowedEmail(email)) {
-      return sendJson(res, 400, { error: "仅支持 10 位数字 + @stu.pku.edu.cn 或 10 位数字 + @pku.edu.cn 邮箱。" });
+      return sendJson(res, 400, { error: ALLOWED_EMAIL_MESSAGE });
     }
     if (email === ADMIN_EMAIL || data.users.some(user => user.email === email && user.passwordHash)) {
       return sendJson(res, 409, { error: "该邮箱已注册，请使用密码登录。" });
@@ -1824,7 +1826,7 @@ async function handleApi(req, res, url) {
       return sendJson(res, 400, { error: "请先完成滑动安全验证。" });
     }
     if (!isAllowedEmail(email)) {
-      return sendJson(res, 400, { error: "仅支持 10 位数字 + @stu.pku.edu.cn 或 10 位数字 + @pku.edu.cn 邮箱。" });
+      return sendJson(res, 400, { error: ALLOWED_EMAIL_MESSAGE });
     }
     if (email === ADMIN_EMAIL) {
       return sendJson(res, 400, { error: "管理员密码请在服务器环境变量中修改。" });
@@ -1855,7 +1857,7 @@ async function handleApi(req, res, url) {
     const email = normalizeEmail(body.email);
     if (body.sliderPassed !== true) return sendJson(res, 400, { error: "请先完成滑动安全验证。" });
     if (!isAllowedEmail(email)) {
-      return sendJson(res, 400, { error: "仅支持 10 位数字 + @stu.pku.edu.cn 或 10 位数字 + @pku.edu.cn 邮箱。" });
+      return sendJson(res, 400, { error: ALLOWED_EMAIL_MESSAGE });
     }
     const exists = email === ADMIN_EMAIL || data.users.some(user => user.email === email && user.passwordHash);
     return sendJson(res, 200, { email, exists });
@@ -2179,7 +2181,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/profile") {
     const body = JSON.parse(await readBody(req) || "{}");
     const authUser = getUserBySession(data, body.authToken);
-    if (!authUser) return sendJson(res, 401, { error: "请先完成北大邮箱验证。" });
+    if (!authUser) return sendJson(res, 401, { error: "请先完成校内邮箱验证。" });
     const existing = data.profiles.find(item => item.email === authUser.email);
     const profile = sanitizeProfile({ ...body, email: authUser.email }, existing, data.settings);
     const missing = validateProfile(profile);
@@ -2198,7 +2200,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/profile/match-paused") {
     const body = JSON.parse(await readBody(req) || "{}");
     const authUser = getUserBySession(data, body.authToken);
-    if (!authUser) return sendJson(res, 401, { error: "请先完成北大邮箱验证。" });
+    if (!authUser) return sendJson(res, 401, { error: "请先完成校内邮箱验证。" });
     const profile = data.profiles.find(item => item.email === authUser.email);
     if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
     const paused = body.paused === true;
