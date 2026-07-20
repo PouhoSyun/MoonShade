@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MoonShade 管理后台</title>
-    <link rel="stylesheet" href="/styles.css?v=20260720-admin-table-width" />
+    <link rel="stylesheet" href="/styles.css?v=20260720-allocation-best-match" />
   </head>
   <body>
     <main class="admin-page">
@@ -131,6 +131,11 @@
 
           <section class="panel">
             <h2>每日候选匹配</h2>
+            <div class="best-match-tool">
+              <select data-best-match-profile></select>
+              <button class="secondary-action" type="button" data-find-best-match>计算最高交叉权重</button>
+              <div class="best-match-result" data-best-match-result></div>
+            </div>
             <div class="match-editor" data-match-editor></div>
           </section>
         </div>
@@ -158,6 +163,6 @@
         });
       })();
     </script>
-    <script src="/admin.js?v=20260720-campus-groups" defer></script>
+    <script src="/admin.js?v=20260720-allocation-best-match" defer></script>
   </body>
 </html>

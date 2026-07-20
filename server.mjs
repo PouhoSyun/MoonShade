@@ -991,21 +991,43 @@ function genderBaseIntervalDays(profile, profiles = []) {
   const participants = profiles.filter(item => isActiveProfile(item) && item.gender);
   const men = participants.filter(item => item.gender === "男").length;
   const women = participants.filter(item => item.gender === "女").length;
-  if (!men || !women || !["男", "女"].includes(profile.gender)) return 4;
-  const womenMenRatio = women / men;
-  const maleDays = 4 * Math.sqrt(womenMenRatio);
-  const femaleDays = 4 / Math.sqrt(womenMenRatio);
+  if (!men || !women || !["男", "女"].includes(profile.gender)) return 5;
+  const maleDays = 5 * Math.sqrt(men / women);
+  const femaleDays = 5 * Math.sqrt(women / men);
   return profile.gender === "男" ? maleDays : femaleDays;
 }
 
-function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, now = Date.now()) {
+function stableRatio(seed) {
+  const hash = crypto.createHash("sha256").update(String(seed)).digest();
+  return hash.readUInt32BE(0) / 0xffffffff;
+}
+
+function stableNoiseDays(profile, settings = defaultData.settings) {
+  const roundId = currentRound(new Date(), settings).id;
+  return roundWeight((stableRatio(`${profile.id}:${roundId}:allocation-noise`) * 2) - 1, 2);
+}
+
+function stableReferenceAt(profile, lastAt, now = Date.now()) {
+  if (lastAt) return lastAt;
+  const createdAt = new Date(profile.createdAt || profile.updatedAt || 0).getTime();
+  if (createdAt) return createdAt;
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, settings = defaultData.settings, now = Date.now()) {
   const baseDays = genderBaseIntervalDays(profile, profiles);
-  const personalOffset = clampNumber((Number(personalWeight) - 1) * 0.45, -0.75, 0.75);
-  const intervalDays = clampNumber(baseDays - personalOffset, 1, 7);
-  const referenceAt = lastAt || now;
+  const personalOffset = clampNumber((Number(personalWeight) - 1) * 0.9, -1.25, 1.25);
+  const noiseDays = stableNoiseDays(profile, settings);
+  const intervalDays = Math.max(2.5, baseDays - personalOffset + noiseDays);
+  const referenceAt = stableReferenceAt(profile, lastAt, now);
   return {
     intervalDays: roundWeight(intervalDays, 2),
-    expectedAt: referenceAt + intervalDays * 86_400_000
+    expectedAt: referenceAt + intervalDays * 86_400_000,
+    baseIntervalDays: roundWeight(baseDays, 2),
+    personalOffsetDays: roundWeight(personalOffset, 2),
+    noiseDays
   };
 }
 
@@ -1338,7 +1360,7 @@ function matchHistory(matches = []) {
 function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map(), rankContext = profileRankContext(profiles)) {
   const factors = profileWeightFactors(profile, profiles, history, now, rankContext);
   const { lastAt, daysSince, clarity, completeness, personalWeight } = factors;
-  const allocation = expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, now);
+  const allocation = expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, settings, now);
   const interval = allocation.intervalDays;
   const remainingMs = allocation.expectedAt - now;
   const referenceDays = Math.max(0, Math.ceil(remainingMs / 86_400_000));
@@ -1350,6 +1372,9 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
     daysSince === null ? "尚无成功匹配记录" : `距上次成功匹配 ${daysSince} 天`,
     `问卷完整度 ${Math.round(completeness.ratio * 100)}%`,
     `问卷精准度 ${Math.round(clarity.ratio * 100)}%`,
+    `性别比例基准 ${allocation.baseIntervalDays} 天`,
+    `个人权重偏移 ${allocation.personalOffsetDays >= 0 ? "-" : "+"}${Math.abs(allocation.personalOffsetDays)} 天`,
+    `稳定浮动 ${allocation.noiseDays >= 0 ? "+" : ""}${allocation.noiseDays} 天`,
     genderRank ? `同性别排序第 ${genderRank}` : ""
   ].filter(Boolean).join("；");
   return {
@@ -1360,6 +1385,9 @@ function profileFrequency(profile, profiles, history, settings = defaultData.set
     expectedNextAllocationAt: new Date(nextEligibleAtMs).toISOString(),
     nextEligibleAt: new Date(nextEligibleAtMs).toISOString(),
     referenceDays,
+    baseIntervalDays: allocation.baseIntervalDays,
+    personalOffsetDays: allocation.personalOffsetDays,
+    noiseDays: allocation.noiseDays,
     eligible,
     timeWeight: factors.gapCoefficient,
     clarityWeight: factors.precisionCoefficient,
@@ -1724,6 +1752,21 @@ function matchPreview(left, right, matches, settings, profiles = [left, right]) 
     left: adminMatchProfile(left, { frequencyMap: frequencies }),
     right: adminMatchProfile(right, { frequencyMap: frequencies })
   };
+}
+
+function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultData.settings) {
+  if (!profile || !isActiveProfile(profile)) return null;
+  const activeProfiles = profiles.filter(item => isActiveProfile(item));
+  const historyMatches = matches.filter(item => item.status === "published");
+  return activeProfiles
+    .filter(candidate => candidate.id !== profile.id)
+    .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles))
+    .filter(Boolean)
+    .sort((a, b) =>
+      (b.crossWeight - a.crossWeight)
+      || ((b.adjustedScore || 0) - (a.adjustedScore || 0))
+      || ((b.orientationWeight || 0) - (a.orientationWeight || 0))
+    )[0] || null;
 }
 
 function publishedMatchesFor(profile, profiles, matches) {
@@ -2240,6 +2283,18 @@ async function handleApi(req, res, url) {
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能进入候选。" });
       return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/matches/best-for") {
+      const profile = data.profiles.find(item => item.id === cleanText(adminBody.profileId, 80));
+      if (!profile) return sendJson(res, 404, { error: "用户不存在。" });
+      if (!isActiveProfile(profile)) return sendJson(res, 400, { error: "该用户暂停匹配或未授权参与匹配。" });
+      const preview = bestCrossWeightMatchFor(profile, data.profiles, data.matches, data.settings);
+      if (!preview) return sendJson(res, 404, { error: "暂时没有可计算的匹配对象。" });
+      return sendJson(res, 200, {
+        target: preview.left,
+        best: preview.right,
+        preview
+      });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/delete") {
       const matchId = cleanText(adminBody.matchId, 80);

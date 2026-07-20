@@ -12,6 +12,7 @@ const state = {
   settings: null,
   round: null,
   selectedProfileId: "",
+  bestMatch: null,
   view: "dashboard"
 };
 
@@ -662,6 +663,9 @@ function renderProfileDetail() {
       ["问卷完整度", profile.matchFrequency?.completenessRatio ? `${Math.round(profile.matchFrequency.completenessRatio * 100)}%（${profile.matchFrequency.completenessFilled}/${profile.matchFrequency.completenessTotal}）` : ""],
       ["距上次成功匹配", profile.matchFrequency?.daysSinceLastMatch === null || profile.matchFrequency?.daysSinceLastMatch === undefined ? "暂无成功匹配" : `${profile.matchFrequency.daysSinceLastMatch} 天`],
       ["上次成功匹配时间", formatDateTime(profile.matchFrequency?.lastSuccessfulMatchAt)],
+      ["性别比例基准", profile.matchFrequency?.baseIntervalDays ? `${profile.matchFrequency.baseIntervalDays} 天` : ""],
+      ["个人权重偏移", profile.matchFrequency?.personalOffsetDays !== undefined ? `${formatWeight(profile.matchFrequency.personalOffsetDays)} 天` : ""],
+      ["稳定噪声", profile.matchFrequency?.noiseDays !== undefined ? `${formatWeight(profile.matchFrequency.noiseDays)} 天` : ""],
       ["预计下次分配时间", scheduleText(profile.matchFrequency)],
       ["判断依据", profile.matchFrequency?.reason]
     ])}
@@ -785,6 +789,35 @@ function renderMatchDiagnostics(match) {
   `;
 }
 
+function renderBestMatchTool() {
+  const select = $("[data-best-match-profile]");
+  const result = $("[data-best-match-result]");
+  if (!select || !result) return;
+  const activeProfiles = state.profiles.filter(profile => profile.matchPaused !== true && profile.consent === true);
+  const currentValue = select.value || state.selectedProfileId || activeProfiles[0]?.id || "";
+  select.innerHTML = activeProfiles
+    .map(profile => `<option value="${escapeHtml(profile.id)}" ${profile.id === currentValue ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
+    .join("");
+  if (!activeProfiles.length) {
+    result.innerHTML = `<p>暂无可参与匹配的问卷。</p>`;
+    return;
+  }
+  if (!state.bestMatch) {
+    result.innerHTML = `<p>选择一个用户后，可计算当前最高交叉权重对象。</p>`;
+    return;
+  }
+  const preview = state.bestMatch.preview;
+  result.innerHTML = `
+    <p>
+      <strong>${escapeHtml(state.bestMatch.target?.displayName || "目标用户")}</strong>
+      ×
+      <strong>${escapeHtml(state.bestMatch.best?.displayName || "最佳对象")}</strong>
+      <span>交叉 ${escapeHtml(formatWeight(preview.crossWeight))} · 最终 ${escapeHtml(formatWeight(preview.adjustedScore))} · 个人乘积 ${escapeHtml(formatWeight(preview.personalWeight))}</span>
+    </p>
+    <button class="table-action" type="button" data-apply-best-match>填入第一张候选卡片</button>
+  `;
+}
+
 function updateSelectOptions(select, selectedId, counterpartId) {
   select.innerHTML = compatibleProfileOptions(selectedId, counterpartId);
   if (Array.from(select.options).some(option => option.value === selectedId)) {
@@ -820,7 +853,40 @@ async function previewMatch(card) {
   }
 }
 
+async function findBestMatch() {
+  const select = $("[data-best-match-profile]");
+  const result = $("[data-best-match-result]");
+  const profileId = select?.value || state.selectedProfileId;
+  if (!profileId) return;
+  if (result) result.innerHTML = `<p>正在计算最高交叉权重...</p>`;
+  try {
+    const payload = await api("/api/admin/matches/best-for", {
+      method: "POST",
+      body: JSON.stringify({ profileId })
+    });
+    state.bestMatch = payload;
+    renderBestMatchTool();
+  } catch (error) {
+    state.bestMatch = null;
+    if (result) result.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function applyBestMatchToFirstCard() {
+  if (!state.bestMatch?.target?.id || !state.bestMatch?.best?.id) return;
+  const card = $("[data-match-id]");
+  if (!card) return;
+  const leftSelect = card.querySelector("[data-left-id]");
+  const rightSelect = card.querySelector("[data-right-id]");
+  updateSelectOptions(leftSelect, state.bestMatch.target.id, state.bestMatch.best.id);
+  updateSelectOptions(rightSelect, state.bestMatch.best.id, state.bestMatch.target.id);
+  leftSelect.value = state.bestMatch.target.id;
+  rightSelect.value = state.bestMatch.best.id;
+  await previewMatch(card);
+}
+
 function renderMatches() {
+  renderBestMatchTool();
   const editor = $("[data-match-editor]");
   const matches = candidateMatches();
   if (!matches.length) {
@@ -943,6 +1009,7 @@ $("[data-new-announcement]").addEventListener("click", resetAnnouncementForm);
 $("[data-community-qr-input]").addEventListener("change", handleCommunityFileChange);
 $("[data-save-community-qr]").addEventListener("click", saveCommunityQr);
 $("[data-delete-community-qr]").addEventListener("click", deleteCommunityQr);
+$("[data-find-best-match]")?.addEventListener("click", findBestMatch);
 document.addEventListener("click", event => {
   const viewButton = event.target.closest("[data-admin-view]");
   if (viewButton) {
@@ -953,8 +1020,12 @@ document.addEventListener("click", event => {
   const profileButton = event.target.closest("[data-view-profile]");
   if (profileButton) {
     state.selectedProfileId = profileButton.dataset.viewProfile;
+    const bestSelect = $("[data-best-match-profile]");
+    if (bestSelect) bestSelect.value = state.selectedProfileId;
+    state.bestMatch = null;
     renderProfiles();
     renderProfileDetail();
+    renderBestMatchTool();
     return;
   }
   const editAnnouncement = event.target.closest("[data-edit-announcement]");
@@ -981,9 +1052,23 @@ document.addEventListener("click", event => {
   const withdrawButton = event.target.closest("[data-withdraw-match]");
   if (withdrawButton) {
     withdrawMatch(withdrawButton.closest("[data-match-id]"));
+    return;
+  }
+  const applyBestButton = event.target.closest("[data-apply-best-match]");
+  if (applyBestButton) {
+    applyBestMatchToFirstCard();
   }
 });
 document.addEventListener("change", event => {
+  const bestSelect = event.target.closest("[data-best-match-profile]");
+  if (bestSelect) {
+    state.bestMatch = null;
+    state.selectedProfileId = bestSelect.value;
+    renderProfiles();
+    renderProfileDetail();
+    renderBestMatchTool();
+    return;
+  }
   const select = event.target.closest("[data-left-id], [data-right-id]");
   if (!select) return;
   previewMatch(select.closest("[data-match-id]"));
