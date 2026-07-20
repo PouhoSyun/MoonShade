@@ -1638,6 +1638,30 @@ textarea:focus {
   z-index: 1;
 }
 
+.campus-group {
+  display: grid;
+  gap: 8px;
+}
+
+.campus-group + .campus-group {
+  margin-top: 14px;
+}
+
+.campus-group small,
+.field-hint {
+  color: #747b83;
+  font-size: 13px;
+}
+
+.campus-group.is-disabled .option-pill {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.option-pill.is-disabled input {
+  cursor: not-allowed;
+}
+
 .multi-select {
   position: relative;
   min-width: 0;

@@ -18,7 +18,11 @@ const state = {
 const $ = selector => document.querySelector(selector);
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (path.startsWith("/api/admin/") && state.token) {
+    headers.authorization = `Bearer ${state.token}`;
+  }
+  const response = await fetch(path, { ...options, headers });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "请求失败");
   return payload;
@@ -130,7 +134,12 @@ function frequencyText(frequency) {
 }
 
 function studentIdFromEmail(email) {
-  return String(email || "").match(/^(\d{10})@/)?.[1] || "-";
+  const normalized = String(email || "").toLowerCase();
+  const id = normalized.match(/^(\d{10})@/)?.[1];
+  if (!id) return "-";
+  if (/@(?:stu\.)?pku\.edu\.cn$/.test(normalized)) return `北大 ${id}`;
+  if (/@ruc\.edu\.cn$/.test(normalized)) return `人大 ${id}`;
+  return id;
 }
 
 function formatWeight(value) {
@@ -306,11 +315,11 @@ function logout() {
 async function loadAdmin() {
   if (!state.token) return;
   const [profilesPayload, matchesPayload, settingsPayload, announcementsPayload, communityPayload] = await Promise.all([
-    api(`/api/admin/profiles?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/matches?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/settings?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/announcements?adminToken=${encodeURIComponent(state.token)}`),
-    api(`/api/admin/community?adminToken=${encodeURIComponent(state.token)}`)
+    api("/api/admin/profiles"),
+    api("/api/admin/matches"),
+    api("/api/admin/settings"),
+    api("/api/admin/announcements"),
+    api("/api/admin/community")
   ]);
   state.profiles = profilesPayload.profiles;
   state.matches = matchesPayload.matches;
@@ -463,7 +472,6 @@ async function saveCommunityQr() {
     const payload = await api("/api/admin/community/save", {
       method: "POST",
       body: JSON.stringify({
-        adminToken: state.token,
         community: { wechatQrImage: image }
       })
     });
@@ -485,7 +493,7 @@ async function deleteCommunityQr() {
   try {
     const payload = await api("/api/admin/community/delete", {
       method: "POST",
-      body: JSON.stringify({ adminToken: state.token })
+      body: JSON.stringify({})
     });
     state.community = payload.community || {};
     state.communityQrDraft = "";
@@ -505,7 +513,6 @@ async function saveAnnouncement() {
     const payload = await api("/api/admin/announcements/save", {
       method: "POST",
       body: JSON.stringify({
-        adminToken: state.token,
         announcement: {
           id: $("[data-announcement-id]").value,
           title: $("[data-announcement-title]").value,
@@ -526,7 +533,7 @@ async function deleteAnnouncement(id) {
   if (!confirm("确定删除这条公告吗？")) return;
   const payload = await api("/api/admin/announcements/delete", {
     method: "POST",
-    body: JSON.stringify({ adminToken: state.token, id })
+    body: JSON.stringify({ id })
   });
   state.announcements = payload.announcements || [];
   renderAnnouncements();
@@ -800,7 +807,6 @@ async function previewMatch(card) {
     const payload = await api("/api/admin/matches/preview", {
       method: "POST",
       body: JSON.stringify({
-        adminToken: state.token,
         leftId,
         rightId
       })
@@ -861,18 +867,18 @@ function renderPublishedMatches() {
 }
 
 async function publishMatches() {
-  await api("/api/admin/matches/publish", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
+  await api("/api/admin/matches/publish", { method: "POST", body: JSON.stringify({}) });
   await loadAdmin();
 }
 
 async function seedDemoUsers() {
-  await api("/api/admin/demo-users", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
+  await api("/api/admin/demo-users", { method: "POST", body: JSON.stringify({}) });
   await loadAdmin();
 }
 
 async function deleteDemoUsers() {
   if (!confirm("确定删除所有测试用户及其相关匹配记录吗？")) return;
-  await api("/api/admin/demo-users/delete", { method: "POST", body: JSON.stringify({ adminToken: state.token }) });
+  await api("/api/admin/demo-users/delete", { method: "POST", body: JSON.stringify({}) });
   await loadAdmin();
 }
 
@@ -883,7 +889,6 @@ async function saveSettings() {
     const payload = await api("/api/admin/settings", {
       method: "POST",
       body: JSON.stringify({
-        adminToken: state.token,
         settings: {
           matchIntervalDays: $("[data-match-interval]").value,
           matchWindowNote: $("[data-match-note-input]").value
@@ -903,7 +908,6 @@ async function pushMatch(card) {
   await api("/api/admin/matches/update", {
     method: "POST",
     body: JSON.stringify({
-      adminToken: state.token,
       matchId: card.dataset.matchId,
       leftId: card.querySelector("[data-left-id]").value,
       rightId: card.querySelector("[data-right-id]").value,
@@ -918,7 +922,6 @@ async function withdrawMatch(card) {
   await api("/api/admin/matches/delete", {
     method: "POST",
     body: JSON.stringify({
-      adminToken: state.token,
       matchId: card.dataset.matchId
     })
   });

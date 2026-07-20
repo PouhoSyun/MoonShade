@@ -8,7 +8,10 @@ const optionSets = {
   years: Array.from({ length: 21 }, (_, index) => String(1990 + index)),
   identities: ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"],
   schoolTypes: ["北京大学", "中国人民大学"],
-  locations: ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"],
+  locationsBySchool: {
+    北京大学: ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"],
+    中国人民大学: ["海淀", "通州", "苏州"]
+  },
   provinces: ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"],
   regions: ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"],
   homeAreas: ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区", "乡村", "流动成长"],
@@ -34,6 +37,8 @@ const optionSets = {
   gameInterests: ["竞技", "射击", "策略", "沙盒", "角色扮演", "乙游", "休闲", "经营", "塔防", "页游", "手游", "端游", "主机", "桌游", "密室", "剧本杀"],
   otherInterests: ["美妆", "穿搭", "Cosplay","探店", "收纳", "冥想", "同人", "追星", "木工", "陶艺", "无人机"]
 };
+
+optionSets.locations = Object.values(optionSets.locationsBySchool).flat();
 
 const scaleQuestions = [
   { key: "warmth", title: "相处时，我更靠近", left: "冷静高效", right: "真诚温暖" },
@@ -63,7 +68,7 @@ const pages = [
       [{ type: "select", name: "birthYear", label: "出生年", options: optionSets.years }, { type: "yearRange", name: "idealBirthYear", label: "可接受出生年区间", options: optionSets.years }],
       [{ type: "chips", name: "identity", label: "目前身份", options: optionSets.identities }, { type: "chips", multi: true, name: "idealIdentities", label: "可接受身份", options: optionSets.identities }],
       [{ type: "chips", name: "schoolType", label: "院校背景", options: optionSets.schoolTypes }, { type: "chips", multi: true, name: "idealSchoolTypes", label: "可接受院校背景", options: optionSets.schoolTypes }],
-      [{ type: "chips", multi: true, name: "location", label: "所在校区", options: optionSets.locations }, { type: "chips", multi: true, name: "idealLocations", label: "可接受校区", options: optionSets.locations }],
+      [{ type: "campusChips", multi: true, name: "location", label: "所在校区", mode: "self" }, { type: "campusChips", multi: true, name: "idealLocations", label: "可接受校区", mode: "ideal" }],
       [{ type: "select", name: "hometownProvince", label: "家乡省份", options: optionSets.provinces }, { type: "chips", multi: true, name: "idealHometownRegions", label: "可接受家乡地区", options: optionSets.regions }],
       [{ type: "chips", name: "homeArea", label: "城市 / 乡村", options: optionSets.homeAreas }, { type: "chips", multi: true, name: "idealHomeAreas", label: "可接受成长环境", options: optionSets.homeAreas }],
       [{ type: "chips", name: "discipline", label: "专业方向", options: optionSets.disciplines }, { type: "chips", multi: true, name: "idealDisciplines", label: "可接受专业方向", options: optionSets.disciplines }]
@@ -172,6 +177,40 @@ const pausedStatusMessage = "此别满庭月色，盼形影不离。您的问卷
 const $ = selector => document.querySelector(selector);
 const $$ = selector => Array.from(document.querySelectorAll(selector));
 
+function normalizeCampus(value) {
+  const aliases = {
+    人民医院: "医院系统",
+    第一医院: "医院系统",
+    第三医院: "医院系统",
+    第六医院: "医院系统",
+    国际医院: "医院系统"
+  };
+  return aliases[value] || value;
+}
+
+function campusesForSchool(school) {
+  return optionSets.locationsBySchool[school] || [];
+}
+
+function selectedSchoolsForCampuses(field) {
+  if (field.mode === "self") return selectedValue("schoolType") ? [selectedValue("schoolType")] : [];
+  const schools = selectedValue("idealSchoolTypes");
+  return Array.isArray(schools) ? schools : [];
+}
+
+function reconcileCampusSelections() {
+  const ownAllowed = campusesForSchool(selectedValue("schoolType"));
+  const ownSelected = Array.isArray(selectedValue("location")) ? selectedValue("location").map(normalizeCampus) : [];
+  const nextOwn = [...new Set(ownSelected.filter(item => ownAllowed.includes(item)))];
+  if (ownSelected.join("|") !== nextOwn.join("|")) setByPath(state.selected, "location", nextOwn);
+
+  const idealSchools = selectedValue("idealSchoolTypes");
+  const idealAllowed = (Array.isArray(idealSchools) ? idealSchools : []).flatMap(campusesForSchool);
+  const idealSelected = Array.isArray(selectedValue("idealLocations")) ? selectedValue("idealLocations").map(normalizeCampus) : [];
+  const nextIdeal = [...new Set(idealSelected.filter(item => idealAllowed.includes(item)))];
+  if (idealSelected.join("|") !== nextIdeal.join("|")) setByPath(state.selected, "idealLocations", nextIdeal);
+}
+
 function formatDateTime(value) {
   if (!value) return "待定";
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
@@ -187,7 +226,12 @@ function formatDateOnly(value) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (options.auth && state.authToken) {
+    headers.authorization = `Bearer ${state.authToken}`;
+  }
+  const { auth, ...fetchOptions } = options;
+  const response = await fetch(path, { ...fetchOptions, headers });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.missing ? `${payload.error}：${payload.missing.join("、")}` : payload.error);
   return payload;
@@ -448,10 +492,10 @@ function closeCommunityModal() {
   document.body.classList.remove("has-modal-open");
 }
 
-function optionButton(value, selected, fieldName, multi = false, label = value) {
+function optionButton(value, selected, fieldName, multi = false, label = value, disabled = false) {
   return `
-    <label class="option-pill ${selected ? "is-selected" : ""}">
-      <input type="${multi ? "checkbox" : "radio"}" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" data-option-field="${escapeHtml(fieldName)}" ${selected ? "checked" : ""} />
+    <label class="option-pill ${selected ? "is-selected" : ""} ${disabled ? "is-disabled" : ""}">
+      <input type="${multi ? "checkbox" : "radio"}" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" data-option-field="${escapeHtml(fieldName)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} />
       <span>${escapeHtml(label)}</span>
     </label>
   `;
@@ -581,6 +625,30 @@ function renderField(field) {
       </div>
     `;
   }
+  if (field.type === "campusChips") {
+    const selected = Array.isArray(current) ? current.map(normalizeCampus) : [];
+    const selectedSchools = selectedSchoolsForCampuses(field);
+    const groups = field.mode === "self"
+      ? selectedSchools.map(school => [school, campusesForSchool(school)]).filter(([, campuses]) => campuses.length)
+      : optionSets.schoolTypes.map(school => [school, campusesForSchool(school)]);
+    const empty = field.mode === "self" ? "请先选择院校背景" : "请先选择可接受院校背景";
+    return `
+      <div class="mirror-field">
+        <span>${escapeHtml(field.label)}</span>
+        ${groups.length ? groups.map(([school, campuses]) => {
+          const disabledGroup = field.mode === "ideal" && !selectedSchools.includes(school);
+          return `
+            <div class="campus-group ${disabledGroup ? "is-disabled" : ""}">
+              <small>${escapeHtml(school)}</small>
+              <div class="segmented multi" data-field="${field.name}" data-campus-field="${field.mode}">
+                ${campuses.map(option => optionButton(option, selected.includes(option), field.name, true, option, disabledGroup)).join("")}
+              </div>
+            </div>
+          `;
+        }).join("") : `<p class="field-hint">${escapeHtml(empty)}</p>`}
+      </div>
+    `;
+  }
   if (field.type === "scale") {
     const values = [-3, -2, -1, 1, 2, 3];
     return `
@@ -621,6 +689,7 @@ function renderField(field) {
 function renderSurveyPage() {
   const page = pages[state.pageIndex];
   const authed = hasAuthToken();
+  reconcileCampusSelections();
   renderAuthState();
   $(".survey-sidebar").hidden = !authed;
   $(".form-title").hidden = !authed;
@@ -904,6 +973,9 @@ function renderSubmitState() {
 }
 
 function cleanProfileFieldValue(key, value) {
+  if (key === "location" || key === "idealLocations") {
+    return Array.isArray(value) ? [...new Set(value.map(normalizeCampus).filter(item => optionSets.locations.includes(item)))] : [];
+  }
   if (key === "intimacy") return valueInOptions(value, optionSets.intimacy) ? value : "";
   if (key === "idealIntimacy") return Array.isArray(value) ? value.filter(item => optionSets.intimacy.includes(item)) : [];
   if (key === "intimacyTiming") return valueInOptions(value, optionSets.intimacyTiming) ? value : "";
@@ -964,7 +1036,7 @@ function bindForm() {
     const message = $("[data-form-message]");
     message.textContent = "正在提交...";
     try {
-      const payload = await api("/api/profile", { method: "POST", body: JSON.stringify(collectForm()) });
+      const payload = await api("/api/profile", { method: "POST", auth: true, body: JSON.stringify(collectForm()) });
       state.token = payload.profile.token;
       localStorage.setItem(tokenKey, state.token);
       fillForm(payload.profile);
@@ -1037,7 +1109,7 @@ function bindAuth() {
       if (!confirmed) return;
       deleteButton.disabled = true;
       try {
-        await api("/api/auth/delete-account", { method: "POST", body: JSON.stringify({ authToken: state.authToken }) });
+        await api("/api/auth/delete-account", { method: "POST", auth: true, body: JSON.stringify({}) });
         localStorage.removeItem(authKey);
         localStorage.removeItem(tokenKey);
         localStorage.removeItem("moonshade.adminToken");
@@ -1059,7 +1131,8 @@ function bindAuth() {
       try {
         const payload = await api("/api/profile/match-paused", {
           method: "POST",
-          body: JSON.stringify({ authToken: state.authToken, paused: nextPaused })
+          auth: true,
+          body: JSON.stringify({ paused: nextPaused })
         });
         state.profile = payload.profile;
         fillForm(payload.profile);
@@ -1280,7 +1353,7 @@ async function loadRound() {
 
 async function loadAuth() {
   if (!state.authToken) return;
-  const result = await api(`/api/auth/me?authToken=${encodeURIComponent(state.authToken)}`);
+  const result = await api("/api/auth/me", { auth: true });
   if (result.user) {
     state.email = result.user.email;
     $("[data-email-input]").value = result.user.email;
@@ -1294,9 +1367,10 @@ async function loadAuth() {
 }
 
 async function loadMe() {
-  const query = state.authToken ? `authToken=${encodeURIComponent(state.authToken)}` : `token=${encodeURIComponent(state.token)}`;
   if (!state.authToken && !state.token) return;
-  const payload = await api(`/api/me?${query}`);
+  const payload = state.authToken
+    ? await api("/api/me", { auth: true })
+    : await api(`/api/me?token=${encodeURIComponent(state.token)}`);
   if (payload.profile) {
     fillForm(payload.profile);
   } else {
@@ -1313,8 +1387,9 @@ async function loadMatches() {
   }
   list.innerHTML = `<div class="empty-state">正在计算匹配结果...</div>`;
   try {
-    const query = state.authToken ? `authToken=${encodeURIComponent(state.authToken)}` : `token=${encodeURIComponent(state.token)}`;
-    const payload = await api(`/api/matches?${query}`);
+    const payload = state.authToken
+      ? await api("/api/matches", { auth: true })
+      : await api(`/api/matches?token=${encodeURIComponent(state.token)}`);
     if (!payload.matches.length) {
       list.innerHTML = `<div class="empty-state results-empty">管理员还没有发布本轮匹配。生成后的匹配表会先进入后台审核，发布后才会在这里显示。</div>`;
       return;

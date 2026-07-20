@@ -40,8 +40,25 @@ const DATA_FILE = process.env.MOONSHADE_DATA_FILE || join(__dirname, "data", "mo
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_EMAIL = process.env.MOONSHADE_ADMIN_EMAIL || "moodylitchee@stu.pku.edu.cn";
 const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
+const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
+const ALLOW_DEV_CODE = envBool(process.env.MOONSHADE_ALLOW_DEV_CODE, IS_DEVELOPMENT);
 const ALLOWED_SCHOOL_TYPES = ["北京大学", "中国人民大学"];
-const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 @ruc.edu.cn 邮箱。";
+const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 10 位数字 + @ruc.edu.cn 邮箱。";
+const PKU_LOCATIONS = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"];
+const RUC_LOCATIONS = ["海淀", "通州", "苏州"];
+const ALLOWED_LOCATIONS = [...PKU_LOCATIONS, ...RUC_LOCATIONS];
+const LOCATION_ALIASES = {
+  人民医院: "医院系统",
+  第一医院: "医院系统",
+  第三医院: "医院系统",
+  第六医院: "医院系统",
+  国际医院: "医院系统"
+};
+
+if (REQUIRE_SECURE_ADMIN_PASSWORD && !process.env.MOONSHADE_ADMIN_PASSWORD) {
+  throw new Error("生产环境必须设置 MOONSHADE_ADMIN_PASSWORD，不能使用默认管理员密码。");
+}
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -54,6 +71,87 @@ const contentTypes = {
   ".svg": "image/svg+xml; charset=utf-8",
   ".ico": "image/x-icon"
 };
+
+const rateBuckets = new Map();
+const VERIFICATION_WINDOW_MS = 10 * 60_000;
+const VERIFICATION_LIMIT = 2;
+const LOGIN_WINDOW_MS = 10 * 60_000;
+const LOGIN_FAILURE_LIMIT = 5;
+const CHECK_EMAIL_WINDOW_MS = 10 * 60_000;
+const CHECK_EMAIL_LIMIT = 20;
+
+function securityHeaders(extra = {}) {
+  return {
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    ...extra
+  };
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+}
+
+function rateKey(scope, type, value) {
+  return `${scope}:${type}:${String(value || "unknown").toLowerCase()}`;
+}
+
+function pruneBucket(key, now, windowMs) {
+  const bucket = rateBuckets.get(key) || [];
+  const fresh = bucket.filter(item => now - item < windowMs);
+  if (fresh.length) {
+    rateBuckets.set(key, fresh);
+  } else {
+    rateBuckets.delete(key);
+  }
+  return fresh;
+}
+
+function rateStatus(keys, windowMs, max, now = Date.now()) {
+  let retryAfterMs = 0;
+  for (const key of keys) {
+    const bucket = pruneBucket(key, now, windowMs);
+    if (bucket.length >= max) {
+      retryAfterMs = Math.max(retryAfterMs, windowMs - (now - bucket[0]));
+    }
+  }
+  return {
+    limited: retryAfterMs > 0,
+    retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000))
+  };
+}
+
+function recordRate(keys, windowMs, now = Date.now()) {
+  for (const key of keys) {
+    const bucket = pruneBucket(key, now, windowMs);
+    bucket.push(now);
+    rateBuckets.set(key, bucket);
+  }
+}
+
+function clearRate(keys) {
+  keys.forEach(key => rateBuckets.delete(key));
+}
+
+function authLimiterKeys(req, email, scope) {
+  return [
+    rateKey(scope, "ip", clientIp(req)),
+    rateKey(scope, "email", normalizeEmail(email))
+  ];
+}
+
+function sendRateLimit(res, status) {
+  res.writeHead(429, securityHeaders({
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "retry-after": String(status.retryAfterSeconds)
+  }));
+  res.end(JSON.stringify({ error: `请求过于频繁，请 ${status.retryAfterSeconds} 秒后再试。` }));
+}
 
 const defaultData = {
   profiles: [],
@@ -102,10 +200,10 @@ async function writeJson(file, value) {
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
-  res.writeHead(statusCode, {
+  res.writeHead(statusCode, securityHeaders({
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store"
-  });
+  }));
   res.end(body);
 }
 
@@ -143,7 +241,9 @@ function normalizeData(data) {
     matchPausedAt: cleanText(profile.matchPausedAt, 40),
     discipline: normalizeDiscipline(profile.discipline),
     department: normalizeDiscipline(profile.department),
-    idealDisciplines: normalizeDisciplineList(profile.idealDisciplines)
+    idealDisciplines: normalizeDisciplineList(profile.idealDisciplines),
+    location: cleanLocationList(profile.location),
+    idealLocations: cleanLocationList(profile.idealLocations)
   })) : [];
   return {
     ...defaultData,
@@ -173,7 +273,7 @@ function normalizeEmail(email) {
 function isAllowedEmail(email) {
   const normalized = normalizeEmail(email);
   if (normalized === ADMIN_EMAIL) return true;
-  return /^\d{10}@(stu\.)?pku\.edu\.cn$/.test(normalized) || /^[a-z0-9._%+-]+@ruc\.edu\.cn$/.test(normalized);
+  return /^\d{10}@(stu\.)?pku\.edu\.cn$/.test(normalized) || /^\d{10}@ruc\.edu\.cn$/.test(normalized);
 }
 
 function makeToken() {
@@ -372,6 +472,9 @@ async function sendVerificationEmail(email, code) {
     });
     return { delivered: true };
   } else {
+    if (!ALLOW_DEV_CODE) {
+      throw new Error("邮件服务未配置：请设置 SMTP/sendmail，或仅在本地开发时启用 MOONSHADE_ALLOW_DEV_CODE=1。");
+    }
     console.log(`[MoonShade verification] ${email}: ${code}`);
     return { delivered: false, devCode: code };
   }
@@ -390,10 +493,45 @@ function requireAdmin(data, token) {
   return data.adminSessions.some(item => item.token === token && new Date(item.expiresAt) > new Date());
 }
 
+function bearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function requestToken(req, url, body = {}, key = "authToken") {
+  return bearerToken(req) || body[key] || url.searchParams.get(key) || "";
+}
+
+function isAllowedOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  const allowed = new Set([
+    `https://${req.headers.host}`,
+    `http://${req.headers.host}`,
+    ...(process.env.MOONSHADE_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map(item => item.trim())
+      .filter(Boolean)
+  ]);
+  return allowed.has(origin);
+}
+
 function cleanList(value, allowed = []) {
   const list = Array.isArray(value) ? value : [value];
   return [...new Set(list.map(item => String(item || "").trim()).filter(Boolean))]
     .filter(item => allowed.length === 0 || allowed.includes(item));
+}
+
+function normalizeLocation(value) {
+  const clean = cleanText(value, 40);
+  return LOCATION_ALIASES[clean] || clean;
+}
+
+function cleanLocationList(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return [...new Set(list.map(normalizeLocation).filter(Boolean))]
+    .filter(item => ALLOWED_LOCATIONS.includes(item));
 }
 
 function cleanMetricMap(value = {}, multi = false) {
@@ -529,7 +667,6 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
   const allowedSeek = ["女", "男", "非二元", "不限"];
   const allowedIdentities = ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"];
   const allowedSchoolTypes = ALLOWED_SCHOOL_TYPES;
-  const allowedLocations = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "人民医院", "第一医院", "第三医院", "第六医院", "国际医院", "深圳", "牛津", "校外"];
   const allowedProvinces = ["北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾", "海外"];
   const allowedRegions = ["华北", "东北", "华东", "华中", "华南", "西南", "西北", "港澳台"];
   const allowedHomeAreas = ["直辖市/省会/首府/计划单列市", "地级市/州府/公署驻地", "其他城市化地区", "乡村", "流动成长"];
@@ -556,7 +693,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     age: Number.parseInt(input.age, 10) || null,
     gender: allowedGenders.includes(input.gender) ? input.gender : "",
     seeking: cleanList(input.seeking, allowedSeek),
-    city: cleanText(input.city || cleanList(input.location, allowedLocations).join("、"), 40),
+    city: cleanText(input.city || cleanLocationList(input.location).join("、"), 40),
     school: allowedSchoolTypes.includes(input.schoolType) ? input.schoolType : "",
     department: normalizeDiscipline(input.department || input.discipline),
     stage: cleanText(input.stage || input.identity, 40),
@@ -564,8 +701,8 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     idealIdentities: cleanList(input.idealIdentities, allowedIdentities),
     schoolType: allowedSchoolTypes.includes(input.schoolType) ? input.schoolType : "",
     idealSchoolTypes: cleanList(input.idealSchoolTypes, allowedSchoolTypes),
-    location: cleanList(input.location, allowedLocations),
-    idealLocations: cleanList(input.idealLocations, allowedLocations),
+    location: cleanLocationList(input.location),
+    idealLocations: cleanLocationList(input.idealLocations),
     hometownProvince: allowedProvinces.includes(input.hometownProvince) ? input.hometownProvince : "",
     idealHometownRegions: cleanList(input.idealHometownRegions, allowedRegions),
     homeArea: allowedHomeAreas.includes(input.homeArea) ? input.homeArea : "",
@@ -692,7 +829,7 @@ function remapCoefficient(value) {
 
 const precisionMultiselectFields = [
   { key: "seeking", total: 4 },
-  { key: "idealLocations", total: 15 },
+  { key: "idealLocations", total: ALLOWED_LOCATIONS.length },
   { key: "idealHometownRegions", total: 8 },
   { key: "idealHomeAreas", total: 5 },
   { key: "idealDisciplines", total: 8 },
@@ -1787,6 +1924,10 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
 }
 
 async function handleApi(req, res, url) {
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !isAllowedOrigin(req)) {
+    return sendJson(res, 403, { error: "请求来源不被允许。" });
+  }
+
   const data = await readJson(DATA_FILE);
 
   if (req.method === "POST" && url.pathname === "/api/auth/request-code") {
@@ -1801,6 +1942,9 @@ async function handleApi(req, res, url) {
     if (email === ADMIN_EMAIL || data.users.some(user => user.email === email && user.passwordHash)) {
       return sendJson(res, 409, { error: "该邮箱已注册，请使用密码登录。" });
     }
+    const keys = authLimiterKeys(req, email, "verification");
+    const status = rateStatus(keys, VERIFICATION_WINDOW_MS, VERIFICATION_LIMIT);
+    if (status.limited) return sendRateLimit(res, status);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     data.verifications = data.verifications.filter(item => item.email !== email);
     data.verifications.push({
@@ -1810,6 +1954,7 @@ async function handleApi(req, res, url) {
       expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       attempts: 0
     });
+    recordRate(keys, VERIFICATION_WINDOW_MS);
     const delivery = await sendVerificationEmail(email, code);
     await writeJson(DATA_FILE, data);
     return sendJson(res, 200, {
@@ -1834,6 +1979,9 @@ async function handleApi(req, res, url) {
     if (!data.users.some(user => user.email === email && user.passwordHash)) {
       return sendJson(res, 404, { error: "该邮箱还没有注册账号。" });
     }
+    const keys = authLimiterKeys(req, email, "verification");
+    const status = rateStatus(keys, VERIFICATION_WINDOW_MS, VERIFICATION_LIMIT);
+    if (status.limited) return sendRateLimit(res, status);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     data.verifications = data.verifications.filter(item => item.email !== email);
     data.verifications.push({
@@ -1843,6 +1991,7 @@ async function handleApi(req, res, url) {
       expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       attempts: 0
     });
+    recordRate(keys, VERIFICATION_WINDOW_MS);
     const delivery = await sendVerificationEmail(email, code);
     await writeJson(DATA_FILE, data);
     return sendJson(res, 200, {
@@ -1859,6 +2008,10 @@ async function handleApi(req, res, url) {
     if (!isAllowedEmail(email)) {
       return sendJson(res, 400, { error: ALLOWED_EMAIL_MESSAGE });
     }
+    const keys = authLimiterKeys(req, email, "check-email");
+    const status = rateStatus(keys, CHECK_EMAIL_WINDOW_MS, CHECK_EMAIL_LIMIT);
+    if (status.limited) return sendRateLimit(res, status);
+    recordRate(keys, CHECK_EMAIL_WINDOW_MS);
     const exists = email === ADMIN_EMAIL || data.users.some(user => user.email === email && user.passwordHash);
     return sendJson(res, 200, { email, exists });
   }
@@ -1866,6 +2019,9 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = JSON.parse(await readBody(req) || "{}");
     const email = normalizeEmail(body.email);
+    const loginKeys = authLimiterKeys(req, email, "login");
+    const loginStatus = rateStatus(loginKeys, LOGIN_WINDOW_MS, LOGIN_FAILURE_LIMIT);
+    if (loginStatus.limited) return sendRateLimit(res, loginStatus);
     if (email === ADMIN_EMAIL && body.password === ADMIN_PASSWORD) {
       const token = makeToken();
       const adminToken = makeToken();
@@ -1873,11 +2029,13 @@ async function handleApi(req, res, url) {
       const expiresAt = new Date(Date.now() + 12 * 60 * 60_000).toISOString();
       data.userSessions.push({ token, email, createdAt: now, expiresAt });
       data.adminSessions.push({ token: adminToken, email, createdAt: now, expiresAt });
+      clearRate(loginKeys);
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { token, adminToken, email, role: "admin" });
     }
     const user = data.users.find(item => item.email === email && item.passwordHash);
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
+      recordRate(loginKeys, LOGIN_WINDOW_MS);
       return sendJson(res, 401, { error: "邮箱或密码不正确。" });
     }
     const token = makeToken();
@@ -1887,6 +2045,7 @@ async function handleApi(req, res, url) {
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString()
     });
+    clearRate(loginKeys);
     await writeJson(DATA_FILE, data);
     return sendJson(res, 200, { token, email });
   }
@@ -1961,13 +2120,13 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
-    const user = getUserBySession(data, url.searchParams.get("authToken"));
+    const user = getUserBySession(data, requestToken(req, url));
     return sendJson(res, 200, { user: user ? { email: user.email, verifiedAt: user.verifiedAt } : null });
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/delete-account") {
     const body = JSON.parse(await readBody(req) || "{}");
-    const user = getUserBySession(data, body.authToken);
+    const user = getUserBySession(data, requestToken(req, url, body));
     if (!user) return sendJson(res, 401, { error: "请先登录后再注销账户。" });
     const result = deleteAccountForUser(data, user);
     await writeJson(DATA_FILE, data);
@@ -1976,7 +2135,12 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/admin/login") {
     const body = JSON.parse(await readBody(req) || "{}");
+    const email = normalizeEmail(body.email);
+    const loginKeys = authLimiterKeys(req, email, "login");
+    const loginStatus = rateStatus(loginKeys, LOGIN_WINDOW_MS, LOGIN_FAILURE_LIMIT);
+    if (loginStatus.limited) return sendRateLimit(res, loginStatus);
     if (normalizeEmail(body.email) !== ADMIN_EMAIL || body.password !== ADMIN_PASSWORD) {
+      recordRate(loginKeys, LOGIN_WINDOW_MS);
       return sendJson(res, 401, { error: "管理员账号或密码不正确。" });
     }
     const token = makeToken();
@@ -1986,13 +2150,14 @@ async function handleApi(req, res, url) {
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 12 * 60 * 60_000).toISOString()
     });
+    clearRate(loginKeys);
     await writeJson(DATA_FILE, data);
     return sendJson(res, 200, { token, email: ADMIN_EMAIL });
   }
 
   if (url.pathname.startsWith("/api/admin/")) {
     const adminBody = req.method === "GET" ? {} : JSON.parse(await readBody(req) || "{}");
-    const token = req.method === "GET" ? url.searchParams.get("adminToken") : adminBody.adminToken;
+    const token = requestToken(req, url, adminBody, "adminToken");
     if (!requireAdmin(data, token)) return sendJson(res, 401, { error: "需要管理员登录。" });
 
     if (req.method === "GET" && url.pathname === "/api/admin/profiles") {
@@ -2164,7 +2329,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/me") {
     const token = url.searchParams.get("token");
-    const authUser = getUserBySession(data, url.searchParams.get("authToken"));
+    const authUser = getUserBySession(data, requestToken(req, url));
     const profile = authUser
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
@@ -2180,7 +2345,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/profile") {
     const body = JSON.parse(await readBody(req) || "{}");
-    const authUser = getUserBySession(data, body.authToken);
+    const authUser = getUserBySession(data, requestToken(req, url, body));
     if (!authUser) return sendJson(res, 401, { error: "请先完成校内邮箱验证。" });
     const existing = data.profiles.find(item => item.email === authUser.email);
     const profile = sanitizeProfile({ ...body, email: authUser.email }, existing, data.settings);
@@ -2199,7 +2364,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/profile/match-paused") {
     const body = JSON.parse(await readBody(req) || "{}");
-    const authUser = getUserBySession(data, body.authToken);
+    const authUser = getUserBySession(data, requestToken(req, url, body));
     if (!authUser) return sendJson(res, 401, { error: "请先完成校内邮箱验证。" });
     const profile = data.profiles.find(item => item.email === authUser.email);
     if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
@@ -2225,7 +2390,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/matches") {
     const token = url.searchParams.get("token");
-    const authUser = getUserBySession(data, url.searchParams.get("authToken"));
+    const authUser = getUserBySession(data, requestToken(req, url));
     const profile = authUser
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
@@ -2244,19 +2409,19 @@ async function serveStatic(req, res, url) {
   const safePath = normalize(requested).replace(/^(\.\.[/\\])+/, "");
   const filePath = join(PUBLIC_DIR, safePath);
   if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
+    res.writeHead(403, securityHeaders({ "content-type": "text/plain; charset=utf-8" }));
     return res.end("Forbidden");
   }
   try {
     await stat(filePath);
     const ext = extname(filePath);
-    res.writeHead(200, {
+    res.writeHead(200, securityHeaders({
       "content-type": contentTypes[ext] || "application/octet-stream",
       "cache-control": "no-store"
-    });
+    }));
     createReadStream(filePath).pipe(res);
   } catch {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.writeHead(404, securityHeaders({ "content-type": "text/plain; charset=utf-8" }));
     res.end("Not found");
   }
 }
