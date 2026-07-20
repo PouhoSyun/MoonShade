@@ -31,7 +31,7 @@ npm start
 
 ```bash
 NODE_ENV=production
-MOONSHADE_ADMIN_EMAIL=你的管理员邮箱
+MOONSHADE_ADMIN_EMAIL=你的管理员账号
 MOONSHADE_ADMIN_PASSWORD=你的管理员密码
 npm start
 ```
@@ -55,7 +55,7 @@ PORT=3000
 TZ=Asia/Shanghai
 NODE_ENV=production
 MOONSHADE_DATA_FILE=data/moonshade.json
-MOONSHADE_ADMIN_EMAIL=你的管理员邮箱
+MOONSHADE_ADMIN_EMAIL=你的管理员账号
 MOONSHADE_ADMIN_PASSWORD=你的管理员密码
 ```
 

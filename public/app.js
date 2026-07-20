@@ -492,10 +492,10 @@ function closeCommunityModal() {
   document.body.classList.remove("has-modal-open");
 }
 
-function optionButton(value, selected, fieldName, multi = false, label = value, disabled = false) {
+function optionButton(value, selected, fieldName, multi = false, label = value, disabled = false, extraAttrs = "") {
   return `
     <label class="option-pill ${selected ? "is-selected" : ""} ${disabled ? "is-disabled" : ""}">
-      <input type="${multi ? "checkbox" : "radio"}" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" data-option-field="${escapeHtml(fieldName)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} />
+      <input type="${multi ? "checkbox" : "radio"}" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" data-option-field="${escapeHtml(fieldName)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} ${extraAttrs} />
       <span>${escapeHtml(label)}</span>
     </label>
   `;
@@ -633,15 +633,15 @@ function renderField(field) {
       : optionSets.schoolTypes.map(school => [school, campusesForSchool(school)]);
     const empty = field.mode === "self" ? "请先选择院校背景" : "请先选择可接受院校背景";
     return `
-      <div class="mirror-field">
+      <div class="mirror-field campus-field">
         <span>${escapeHtml(field.label)}</span>
         ${groups.length ? groups.map(([school, campuses]) => {
           const disabledGroup = field.mode === "ideal" && !selectedSchools.includes(school);
           return `
-            <div class="campus-group ${disabledGroup ? "is-disabled" : ""}">
-              <small>${escapeHtml(school)}</small>
+            <div class="campus-group ${disabledGroup ? "is-disabled" : ""} ${field.mode === "self" ? "is-self" : ""}">
+              ${field.mode === "ideal" ? `<small>${escapeHtml(school)}</small>` : ""}
               <div class="segmented multi" data-field="${field.name}" data-campus-field="${field.mode}">
-                ${campuses.map(option => optionButton(option, selected.includes(option), field.name, true, option, disabledGroup)).join("")}
+                ${campuses.map(option => optionButton(option, selected.includes(option), field.name, true, option, disabledGroup, `data-campus-option="${escapeHtml(field.mode)}"`)).join("")}
               </div>
             </div>
           `;
@@ -822,7 +822,8 @@ function bindControls() {
       const raw = option.value;
       const value = /^-?\d$/.test(raw) ? Number(raw) : raw;
       if (option.type === "checkbox") {
-        const checkedValues = Array.from(group.querySelectorAll("[data-option-field]:checked"))
+        const scope = option.dataset.campusOption ? document : group;
+        const checkedValues = Array.from(scope.querySelectorAll("[data-option-field]:checked:not(:disabled)"))
           .filter(item => item.dataset.optionField === field)
           .map(item => /^-?\d$/.test(item.value) ? Number(item.value) : item.value);
         const max = Number(group?.dataset.max || 0);

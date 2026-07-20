@@ -1104,10 +1104,15 @@ textarea:focus {
   background: #24564f;
 }
 
-.admin-overview,
-.admin-data-grid {
+.admin-overview {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+}
+
+.admin-data-grid {
+  display: grid;
+  grid-template-columns: minmax(560px, 1.18fr) minmax(360px, 0.82fr);
   gap: 18px;
 }
 
@@ -1155,7 +1160,7 @@ textarea:focus {
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 760px;
 }
 
 .admin-table th,
@@ -1169,6 +1174,12 @@ textarea:focus {
 .admin-table th {
   color: var(--muted);
   font-size: 13px;
+}
+
+.admin-table th:first-child,
+.admin-table td:first-child {
+  min-width: 112px;
+  white-space: nowrap;
 }
 
 .admin-table tr.is-selected td {
@@ -1640,11 +1651,20 @@ textarea:focus {
 
 .campus-group {
   display: grid;
+  align-content: start;
   gap: 8px;
+}
+
+.campus-field {
+  align-content: start;
 }
 
 .campus-group + .campus-group {
   margin-top: 14px;
+}
+
+.campus-group.is-self + .campus-group.is-self {
+  margin-top: 0;
 }
 
 .campus-group small,
@@ -1660,6 +1680,16 @@ textarea:focus {
 
 .option-pill.is-disabled input {
   cursor: not-allowed;
+}
+
+.campus-group .segmented {
+  align-content: start;
+  align-items: start;
+}
+
+.campus-group .option-pill {
+  flex: 0 0 auto;
+  height: 40px;
 }
 
 .multi-select {
@@ -2770,7 +2800,7 @@ main,
 }
 
 .admin-table {
-  min-width: 560px;
+  min-width: 760px;
 }
 
 .admin-table tr[data-view-profile] {

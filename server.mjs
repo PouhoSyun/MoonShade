@@ -38,7 +38,7 @@ loadEnvFile(join(__dirname, ".env"));
 const PUBLIC_DIR = join(__dirname, "public");
 const DATA_FILE = process.env.MOONSHADE_DATA_FILE || join(__dirname, "data", "moonshade.json");
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_EMAIL = process.env.MOONSHADE_ADMIN_EMAIL || "moodylitchee@stu.pku.edu.cn";
+const ADMIN_EMAIL = normalizeEmail(process.env.MOONSHADE_ADMIN_EMAIL || "moodylitchee@stu.pku.edu.cn");
 const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
