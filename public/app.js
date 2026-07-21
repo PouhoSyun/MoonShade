@@ -279,16 +279,28 @@ function schedulePhrase(frequency) {
   return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
 }
 
+function percentText(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0%";
+  return `${Math.round(Math.max(0, Math.min(1, number)) * 100)}%`;
+}
+
 function profileMetricLine(frequency) {
   if (state.profile?.matchPaused) return "已暂停匹配";
-  return frequency?.genderRank
-    ? `同性别排序第 ${frequency.genderRank}`
-    : "问卷已提交，等待系统分配";
+  if (!frequency) return "问卷已提交，等待系统分配";
+  return [
+    frequency.daysSinceLastMatch === null || frequency.daysSinceLastMatch === undefined
+      ? "尚无成功匹配记录"
+      : `距上次成功匹配 ${frequency.daysSinceLastMatch} 天`,
+    `问卷完整度 ${percentText(frequency.completenessRatio)}`,
+    `问卷精准度 ${percentText(frequency.clarityRatio)}`,
+    frequency.genderRank ? `同性别排序第 ${frequency.genderRank}` : ""
+  ].filter(Boolean).join("；");
 }
 
 function matchScheduleNotice(frequency) {
-  const rankText = frequency?.genderRank ? `同性别排序第 ${frequency.genderRank}；` : "";
-  return `${rankText}匹配时间可能浮动，仅供参考，具体以系统分配为准。`;
+  const metricText = frequency ? `${profileMetricLine(frequency)}；` : "";
+  return `${metricText}匹配时间可能浮动，仅供参考，具体以系统分配为准。`;
 }
 
 function renderPersonalSchedule() {

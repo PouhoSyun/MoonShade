@@ -43,6 +43,7 @@ const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
 const ALLOW_DEV_CODE = envBool(process.env.MOONSHADE_ALLOW_DEV_CODE, IS_DEVELOPMENT);
+const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v3-calendar";
 const ALLOWED_SCHOOL_TYPES = ["北京大学", "中国人民大学"];
 const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 10 位数字 + @ruc.edu.cn 邮箱。";
 const PKU_LOCATIONS = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"];
@@ -832,6 +833,27 @@ function roundWeight(value, digits = 3) {
   return Math.round(Number(value || 0) * factor) / factor;
 }
 
+function localDayStartMs(value = Date.now()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function localDateKey(value = Date.now()) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function calendarDaysSince(fromMs, now = Date.now()) {
+  const fromStart = localDayStartMs(fromMs);
+  const nowStart = localDayStartMs(now);
+  if (fromStart === null || nowStart === null) return null;
+  return Math.max(0, Math.floor((nowStart - fromStart) / 86_400_000));
+}
+
 function remapCoefficient(value) {
   const x = clampNumber(Number(value) || 0, 0, 1);
   return roundWeight(-x * x + 2 * x);
@@ -894,7 +916,7 @@ function rawPrecisionRatio(profile) {
 
 function gapCoefficient(daysSince) {
   if (daysSince !== null && daysSince !== undefined && daysSince <= 2) return 0;
-  const effectiveDays = daysSince === null || daysSince === undefined ? 7 : clampNumber(daysSince, 3, 7);
+  const effectiveDays = daysSince === null || daysSince === undefined ? 8 : clampNumber(daysSince, 3, 7);
   return roundWeight(1.15 ** (effectiveDays - 3));
 }
 
@@ -962,7 +984,7 @@ function profileRankContext(profiles = []) {
 
 function profileWeightFactors(profile, profiles, history, now = Date.now(), rankContext = profileRankContext(profiles)) {
   const lastAt = history.lastMatchedAt.get(profile.id) || 0;
-  const daysSince = lastAt ? Math.max(0, Math.floor((now - lastAt) / 86_400_000)) : null;
+  const daysSince = lastAt ? calendarDaysSince(lastAt, now) : null;
   const completeness = profileCompleteness(profile);
   const precisionData = rankContext.precision.get(profile.id) || { rawRatio: rawPrecisionRatio(profile), rankRatio: 0.5, coefficient: 1 };
   const scarcityData = rankContext.scarcity.get(profile.id) || { rawRatio: rawScarcityRatio(profile, profiles), rankRatio: 0.5, coefficient: 1 };
@@ -1018,12 +1040,10 @@ function stableNoiseDays(profile, settings = defaultData.settings) {
 }
 
 function stableReferenceAt(profile, lastAt, now = Date.now()) {
-  if (lastAt) return lastAt;
+  if (lastAt) return localDayStartMs(lastAt) || lastAt;
   const createdAt = new Date(profile.createdAt || profile.updatedAt || 0).getTime();
-  if (createdAt) return createdAt;
-  const day = new Date(now);
-  day.setHours(0, 0, 0, 0);
-  return day.getTime();
+  if (createdAt) return localDayStartMs(createdAt) || createdAt;
+  return localDayStartMs(now) || now;
 }
 
 function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, settings = defaultData.settings, now = Date.now()) {
@@ -1092,6 +1112,9 @@ function publicProfile(profile, context = {}) {
     matchPausedAt: profile.matchPausedAt || null,
     matchFrequency: frequency ? {
       intervalDays: frequency.intervalDays,
+      daysSinceLastMatch: frequency.daysSinceLastMatch,
+      completenessRatio: frequency.completenessRatio,
+      clarityRatio: frequency.clarityRatio,
       expectedNextAllocationAt: frequency.expectedNextAllocationAt,
       nextEligibleAt: frequency.nextEligibleAt,
       referenceDays: frequency.referenceDays,
@@ -1550,12 +1573,10 @@ function selectedCandidateMatches(candidates, activePool, targetCount = 10) {
 }
 
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
-  const publishedParticipantIds = new Set(matches
-    .filter(match => match.status === "published" && match.roundId === roundId)
-    .flatMap(match => [match.leftId, match.rightId]));
-  const pool = profiles.filter(profile => isActiveProfile(profile) && !publishedParticipantIds.has(profile.id));
   const history = matchHistory(matches);
-  const frequencies = frequencyMapFor(pool, matches, settings);
+  const activeProfiles = profiles.filter(isActiveProfile);
+  const frequencies = frequencyMapFor(activeProfiles, matches, settings);
+  const pool = activeProfiles.filter(profile => (frequencies.get(profile.id)?.gapCoefficient || 0) > 0);
   const activePool = [...pool].sort((a, b) => {
     const left = frequencies.get(a.id)?.genderRank || 999;
     const right = frequencies.get(b.id)?.genderRank || 999;
@@ -1563,7 +1584,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   });
   const candidates = [];
   const pairs = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const batchId = `${roundId}-${today}`;
   for (let i = 0; i < activePool.length; i += 1) {
     for (let j = i + 1; j < activePool.length; j += 1) {
@@ -1591,7 +1612,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       roundId,
       batchId,
       generatedFor: today,
-      algorithmVersion: "daily-weight-v2-doc",
+      algorithmVersion: DAILY_MATCH_ALGORITHM_VERSION,
       leftId: best.left.id,
       rightId: best.right.id,
       score: best.crossWeight,
@@ -1653,21 +1674,22 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
 
 function ensureDailyDraftMatches(data) {
   const roundId = currentRound(new Date(), data.settings).id;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const activeIds = new Set(data.profiles.filter(isActiveProfile).map(profile => profile.id));
-  const publishedIds = new Set(data.matches
-    .filter(match => match.roundId === roundId && match.status === "published")
-    .flatMap(match => [match.leftId, match.rightId]));
+  const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
+  const coolingIds = new Set([...frequencyMap.entries()]
+    .filter(([, frequency]) => (frequency.gapCoefficient || 0) <= 0)
+    .map(([id]) => id));
   const hasInvalidDraft = data.matches.some(match =>
     match.roundId === roundId
     && match.status === "draft"
-    && (!activeIds.has(match.leftId) || !activeIds.has(match.rightId) || publishedIds.has(match.leftId) || publishedIds.has(match.rightId))
+    && (!activeIds.has(match.leftId) || !activeIds.has(match.rightId) || coolingIds.has(match.leftId) || coolingIds.has(match.rightId))
   );
   if (hasInvalidDraft) {
     const generated = replaceRoundDraftMatches(data, roundId);
     return generated.length > 0;
   }
-  const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === "daily-weight-v2-doc");
+  const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === DAILY_MATCH_ALGORITHM_VERSION);
   if (hasTodayDraft) return false;
   const generated = replaceRoundDraftMatches(data, roundId);
   return generated.length > 0;
