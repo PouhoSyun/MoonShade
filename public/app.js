@@ -279,53 +279,16 @@ function schedulePhrase(frequency) {
   return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
 }
 
-function percentText(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0%";
-  return `${Math.round(Math.max(0, Math.min(1, number)) * 100)}%`;
-}
-
-function weightText(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0";
-  return number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function requiredCompletionRatio(source = {}) {
-  const checks = [
-    Boolean(source.displayName),
-    Boolean(source.gender),
-    hasSelection(source.seeking),
-    Boolean(source.birthYear || source.age),
-    Boolean(source.identity || source.stage),
-    valueInOptions(source.schoolType, optionSets.schoolTypes),
-    Boolean(hasSelection(source.location) || source.city),
-    Boolean(source.intent),
-    Boolean(source.tempo),
-    valueInOptions(source.intimacy, optionSets.intimacy),
-    listInOptions(source.idealIntimacy, optionSets.intimacy),
-    valueInOptions(source.intimacyTiming, optionSets.intimacyTiming),
-    listInOptions(source.idealIntimacyTiming, optionSets.intimacyTiming),
-    valueInOptions(source.socialBoundary, optionSets.socialBoundaries),
-    listInOptions(source.idealSocialBoundary, optionSets.socialBoundaries),
-    Number.isInteger(source.selfMetrics?.marriage),
-    Number.isInteger(source.idealMetrics?.marriage),
-    Number.isInteger(source.selfMetrics?.fertility),
-    Number.isInteger(source.idealMetrics?.fertility),
-    Boolean(source.contactValue),
-    source.consent === true
-  ];
-  return checks.filter(Boolean).length / checks.length;
-}
-
 function profileMetricLine(frequency) {
   if (state.profile?.matchPaused) return "已暂停匹配";
-  const completenessRatio = Number.isFinite(Number(frequency?.completenessRatio))
-    ? Number(frequency.completenessRatio)
-    : requiredCompletionRatio(state.profile || state.selected);
-  const precisionRatio = Number.isFinite(Number(frequency?.clarityRatio)) ? Number(frequency.clarityRatio) : completenessRatio;
-  const personalWeight = weightText(frequency?.personalWeight);
-  return `目前问卷完整度：${percentText(completenessRatio)} 问卷精准度：${percentText(precisionRatio)}，个人权重分：${personalWeight}`;
+  return frequency?.genderRank
+    ? `同性别排序第 ${frequency.genderRank}`
+    : "问卷已提交，等待系统分配";
+}
+
+function matchScheduleNotice(frequency) {
+  const rankText = frequency?.genderRank ? `同性别排序第 ${frequency.genderRank}；` : "";
+  return `${rankText}匹配时间可能浮动，仅供参考，具体以系统分配为准。`;
 }
 
 function renderPersonalSchedule() {
@@ -352,7 +315,7 @@ function renderPersonalSchedule() {
   if (note) {
     note.textContent = paused
       ? pausedHomeMessage
-      : (frequency?.reason || "匹配频率会随画像分布、性别比例与偏好宽窄浮动");
+      : matchScheduleNotice(frequency);
   }
   const closeTime = $("[data-close-time]");
   if (closeTime) {
