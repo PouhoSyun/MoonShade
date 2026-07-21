@@ -291,13 +291,6 @@ function weightText(value) {
   return number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function signedDayText(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0";
-  const text = number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
-  return number > 0 ? `+${text}` : text;
-}
-
 function requiredCompletionRatio(source = {}) {
   const checks = [
     Boolean(source.displayName),
@@ -382,8 +375,8 @@ function renderPersonalSchedule() {
     matchFrequency.textContent = paused
       ? "已暂停匹配"
       : frequency
-      ? `${frequency.label} · 参考间隔 ${frequency.intervalDays} 天 · 性别基准 ${frequency.baseIntervalDays ?? "-"} 天 · 个人 ${signedDayText(frequency.personalOffsetDays)} 天 · 稳定浮动 ${signedDayText(frequency.noiseDays)} 天`
-      : `基础参考间隔 ${interval} 天`;
+      ? `参考间隔 ${frequency.intervalDays} 天`
+      : `参考间隔 ${interval} 天`;
   }
   renderMatchPauseControl();
 }
