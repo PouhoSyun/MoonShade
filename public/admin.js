@@ -313,6 +313,46 @@ function logout() {
   window.location.reload();
 }
 
+function backupFilename(response) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  if (match) return match[1];
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `moonshade-backup-${timestamp}.json`;
+}
+
+async function downloadDataBackup() {
+  if (!state.token) {
+    alert("请先登录管理员后台。");
+    return;
+  }
+  const response = await fetch("/api/admin/backup", {
+    headers: {
+      authorization: `Bearer ${state.token}`
+    }
+  });
+  if (!response.ok) {
+    let message = "备份下载失败";
+    try {
+      const payload = await response.json();
+      message = payload.error || message;
+    } catch {
+      message = response.statusText || message;
+    }
+    alert(message);
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = backupFilename(response);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function loadAdmin() {
   if (!state.token) return;
   const [profilesPayload, matchesPayload, settingsPayload, announcementsPayload, communityPayload] = await Promise.all([
@@ -1003,6 +1043,7 @@ $("[data-refresh-admin]").addEventListener("click", loadAdmin);
 $("[data-publish-matches]").addEventListener("click", publishMatches);
 $("[data-seed-demo-users]").addEventListener("click", seedDemoUsers);
 $("[data-delete-demo-users]").addEventListener("click", deleteDemoUsers);
+$("[data-backup-data]").addEventListener("click", downloadDataBackup);
 $("[data-save-settings]").addEventListener("click", saveSettings);
 $("[data-save-announcement]").addEventListener("click", saveAnnouncement);
 $("[data-new-announcement]").addEventListener("click", resetAnnouncementForm);

@@ -207,6 +207,16 @@ function sendJson(res, statusCode, payload) {
   res.end(body);
 }
 
+function sendJsonDownload(res, payload, filename) {
+  const body = JSON.stringify(payload, null, 2);
+  res.writeHead(200, securityHeaders({
+    "content-type": "application/json; charset=utf-8",
+    "content-disposition": `attachment; filename="${filename}"`,
+    "cache-control": "no-store"
+  }));
+  res.end(body);
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -2203,6 +2213,10 @@ async function handleApi(req, res, url) {
     const token = requestToken(req, url, adminBody, "adminToken");
     if (!requireAdmin(data, token)) return sendJson(res, 401, { error: "需要管理员登录。" });
 
+    if (req.method === "GET" && url.pathname === "/api/admin/backup") {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      return sendJsonDownload(res, data, `moonshade-backup-${timestamp}.json`);
+    }
     if (req.method === "GET" && url.pathname === "/api/admin/profiles") {
       const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
       return sendJson(res, 200, { profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })), users: data.users });
