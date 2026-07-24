@@ -376,15 +376,9 @@ async function loadAdmin() {
 }
 
 function candidateMatches() {
-  const publishedParticipantIds = new Set(
-    state.matches
-      .filter(match => match.status === "published")
-      .flatMap(match => [match.leftId, match.rightId])
-  );
   return state.matches.filter(match =>
     match.status === "draft"
-    && !publishedParticipantIds.has(match.leftId)
-    && !publishedParticipantIds.has(match.rightId)
+    && match.hardBlocked !== true
   );
 }
 
@@ -414,7 +408,7 @@ function renderSettings() {
   $("[data-admin-match-count]").textContent = String(candidateMatches().length);
   $("[data-admin-interval]").textContent = String(state.settings.matchIntervalDays || 3);
   $("[data-admin-round-note]").textContent = state.round
-    ? `${state.round.label}。每日按个人权重与交叉权重刷新候选，管理员选择推送；已发布可撤回。`
+    ? `${state.round.label}。推送后自动补齐 6 条当前最高权重候选；已发布可撤回。`
     : "轮次信息加载中。";
 }
 
@@ -747,39 +741,11 @@ function locationAccepted(actualLocation, idealLocations) {
   return actual.some(item => ideal.includes(item));
 }
 
-const provinceRegions = {
-  华北: ["北京", "天津", "河北", "山西", "内蒙古"],
-  东北: ["辽宁", "吉林", "黑龙江"],
-  华东: ["上海", "江苏", "浙江", "安徽", "福建", "江西", "山东"],
-  华中: ["河南", "湖北", "湖南"],
-  华南: ["广东", "广西", "海南"],
-  西南: ["重庆", "四川", "贵州", "云南", "西藏"],
-  西北: ["陕西", "甘肃", "青海", "宁夏", "新疆"],
-  港澳台: ["香港", "澳门", "台湾"]
-};
-
-function regionForProvince(province) {
-  return Object.entries(provinceRegions).find(([, provinces]) => provinces.includes(province))?.[0] || "";
-}
-
 function acceptableHit(actualValue, acceptableValues) {
   const actual = asList(actualValue);
   const acceptable = asList(acceptableValues);
-  if (!actual.length || !acceptable.length || acceptable.includes("不限")) return true;
+  if (!actual.length || !acceptable.length || acceptable.includes("不限") || acceptable.includes("不设偏好")) return true;
   return actual.some(item => acceptable.includes(item));
-}
-
-function firstVolumeCompatible(left, right) {
-  return acceptableHit(right.identity || right.stage, left.idealIdentities)
-    && acceptableHit(left.identity || left.stage, right.idealIdentities)
-    && acceptableHit(right.schoolType, left.idealSchoolTypes)
-    && acceptableHit(left.schoolType, right.idealSchoolTypes)
-    && acceptableHit(regionForProvince(right.hometownProvince), left.idealHometownRegions)
-    && acceptableHit(regionForProvince(left.hometownProvince), right.idealHometownRegions)
-    && acceptableHit(right.homeArea, left.idealHomeAreas)
-    && acceptableHit(left.homeArea, right.idealHomeAreas)
-    && acceptableHit(right.discipline || right.department, left.idealDisciplines)
-    && acceptableHit(left.discipline || left.department, right.idealDisciplines);
 }
 
 function hardCompatible(left, right) {
@@ -800,12 +766,19 @@ function hardCompatible(left, right) {
     && (!rightHasRange || !leftYear || yearInRange(leftYear, rightMin, rightMax));
   const locationOk = locationAccepted(right.location || right.city, left.idealLocations)
     && locationAccepted(left.location || left.city, right.idealLocations);
-  return genderOk && ageOk && locationOk;
+  const schoolOk = acceptableHit(right.schoolType, left.idealSchoolTypes)
+    && acceptableHit(left.schoolType, right.idealSchoolTypes);
+  return genderOk && schoolOk && ageOk && locationOk;
 }
 
 function compatibleProfileOptions(selectedId, counterpartId) {
+  const counterpart = state.profiles.find(profile => profile.id === counterpartId);
   return state.profiles
-    .filter(profile => (profile.matchPaused !== true || profile.id === selectedId) && (profile.id !== counterpartId || profile.id === selectedId))
+    .filter(profile =>
+      (profile.matchPaused !== true || profile.id === selectedId)
+      && (profile.id !== counterpartId || profile.id === selectedId)
+      && (!counterpart || hardCompatible(profile, counterpart))
+    )
     .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
     .join("");
 }

@@ -43,7 +43,7 @@ const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
 const ALLOW_DEV_CODE = envBool(process.env.MOONSHADE_ALLOW_DEV_CODE, IS_DEVELOPMENT);
-const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v3-calendar";
+const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v4-soft-gates";
 const ALLOWED_SCHOOL_TYPES = ["北京大学", "中国人民大学"];
 const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 10 位数字 + @ruc.edu.cn 邮箱。";
 const PKU_LOCATIONS = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"];
@@ -1210,11 +1210,12 @@ function acceptableHit(actualValue, acceptableValues) {
 }
 
 function addAcceptableWarning(warnings, owner, candidate, options) {
-  const { field, label, acceptable, actual, actualLabel, strict = false } = options;
+  const { field, label, acceptable, actual, actualLabel, strict = false, weight = 0.95 } = options;
   if (acceptableHit(actual, acceptable)) return;
   warnings.push({
     field,
     strict,
+    weight,
     label,
     message: `${owner.displayName || "一方"} 可接受 ${listText(acceptable)}，${candidate.displayName || "对方"} 的${actualLabel || label}为 ${listText(actual)}。`
   });
@@ -1269,15 +1270,33 @@ function matchBoundaryWarnings(a, b) {
     });
   }
 
-  const firstVolumeChecks = [
-    ["schoolType", "院校背景", "院校背景", "idealSchoolTypes", profile => profile.schoolType],
-    ["hometownRegion", "家乡地区", "家乡地区", "idealHometownRegions", profile => regionForProvince(profile.hometownProvince)],
-    ["homeArea", "成长环境", "成长环境", "idealHomeAreas", profile => profile.homeArea],
-    ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department]
+  addAcceptableWarning(warnings, a, b, {
+    field: "schoolType",
+    label: "院校背景不在 Moon 可接受范围",
+    acceptable: a.idealSchoolTypes,
+    actual: b.schoolType,
+    actualLabel: "院校背景",
+    strict: true,
+    weight: 0
+  });
+  addAcceptableWarning(warnings, b, a, {
+    field: "schoolType",
+    label: "院校背景不在 Shade 可接受范围",
+    acceptable: b.idealSchoolTypes,
+    actual: a.schoolType,
+    actualLabel: "院校背景",
+    strict: true,
+    weight: 0
+  });
+
+  const softVolumeChecks = [
+    ["hometownRegion", "家乡地区", "家乡地区", "idealHometownRegions", profile => regionForProvince(profile.hometownProvince), 0.88],
+    ["homeArea", "成长环境", "成长环境", "idealHomeAreas", profile => profile.homeArea, 0.88],
+    ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department, 0.86]
   ];
-  for (const [field, label, actualLabel, idealKey, actualGetter] of firstVolumeChecks) {
-    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
-    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+  for (const [field, label, actualLabel, idealKey, actualGetter, weight] of softVolumeChecks) {
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel, strict: false, weight });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel, strict: false, weight });
   }
 
   const otherAcceptableChecks = [
@@ -1470,11 +1489,12 @@ function boundaryGateForPair(a, b) {
       warnings
     };
   }
-  const softViolationCount = warnings.filter(item => !item.strict).length;
+  const softWarnings = warnings.filter(item => !item.strict);
+  const booleanGate = softWarnings.reduce((weight, item) => weight * clampNumber(Number(item.weight) || 0.95, 0.1, 1), 1);
   return {
     hardBlocked: false,
-    booleanGate: roundWeight(0.95 ** softViolationCount),
-    softViolationCount,
+    booleanGate: roundWeight(booleanGate),
+    softViolationCount: softWarnings.length,
     warnings
   };
 }
@@ -1553,7 +1573,7 @@ function bestMatchesFor(profile, profiles) {
     }));
 }
 
-function selectedCandidateMatches(candidates, activePool, targetCount = 10) {
+function selectedCandidateMatches(candidates, targetCount = 6) {
   const selected = [];
   const selectedKeys = new Set();
   const addCandidate = candidate => {
@@ -1564,11 +1584,6 @@ function selectedCandidateMatches(candidates, activePool, targetCount = 10) {
     selectedKeys.add(key);
   };
   candidates.slice(0, targetCount).forEach(addCandidate);
-  const selectedParticipantIds = () => new Set(selected.flatMap(item => [item.left.id, item.right.id]));
-  for (const profile of activePool.filter(item => item.gender === "女")) {
-    if (selectedParticipantIds().has(profile.id)) continue;
-    addCandidate(candidates.find(item => item.left.id === profile.id || item.right.id === profile.id));
-  }
   return selected.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
 }
 
@@ -1576,7 +1591,13 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const history = matchHistory(matches);
   const activeProfiles = profiles.filter(isActiveProfile);
   const frequencies = frequencyMapFor(activeProfiles, matches, settings);
-  const pool = activeProfiles.filter(profile => (frequencies.get(profile.id)?.gapCoefficient || 0) > 0);
+  const publishedParticipantIds = new Set(matches
+    .filter(match => match.roundId === roundId && match.status === "published")
+    .flatMap(match => [match.leftId, match.rightId]));
+  const pool = activeProfiles.filter(profile =>
+    (frequencies.get(profile.id)?.gapCoefficient || 0) > 0
+    && !publishedParticipantIds.has(profile.id)
+  );
   const activePool = [...pool].sort((a, b) => {
     const left = frequencies.get(a.id)?.genderRank || 999;
     const right = frequencies.get(b.id)?.genderRank || 999;
@@ -1589,7 +1610,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   for (let i = 0; i < activePool.length; i += 1) {
     for (let j = i + 1; j < activePool.length; j += 1) {
       const scored = scorePair(activePool[i], activePool[j]);
-      if (!scored) continue;
+      if (!scored || scored.hardBlocked) continue;
       const key = pairKey(activePool[i].id, activePool[j].id);
       const repeatedCount = history.pairCounts.get(key) || 0;
       const lastRepeat = history.lastPartners.get(activePool[i].id) === activePool[j].id || history.lastPartners.get(activePool[j].id) === activePool[i].id;
@@ -1603,7 +1624,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
     }
   }
   candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
-  for (const best of selectedCandidateMatches(candidates, activePool, 10)) {
+  for (const best of selectedCandidateMatches(candidates, 6)) {
     const leftFrequency = frequencies.get(best.left.id);
     const rightFrequency = frequencies.get(best.right.id);
     const boundaryWarnings = matchBoundaryWarnings(best.left, best.right);
@@ -1675,15 +1696,28 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
 function ensureDailyDraftMatches(data) {
   const roundId = currentRound(new Date(), data.settings).id;
   const today = localDateKey();
-  const activeIds = new Set(data.profiles.filter(isActiveProfile).map(profile => profile.id));
-  const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
+  const activeProfiles = data.profiles.filter(isActiveProfile);
+  const activeIds = new Set(activeProfiles.map(profile => profile.id));
+  const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
+  const publishedIds = new Set(data.matches
+    .filter(match => match.roundId === roundId && match.status === "published")
+    .flatMap(match => [match.leftId, match.rightId]));
+  const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
   const coolingIds = new Set([...frequencyMap.entries()]
     .filter(([, frequency]) => (frequency.gapCoefficient || 0) <= 0)
     .map(([id]) => id));
   const hasInvalidDraft = data.matches.some(match =>
     match.roundId === roundId
     && match.status === "draft"
-    && (!activeIds.has(match.leftId) || !activeIds.has(match.rightId) || coolingIds.has(match.leftId) || coolingIds.has(match.rightId))
+    && (
+      !activeIds.has(match.leftId)
+      || !activeIds.has(match.rightId)
+      || publishedIds.has(match.leftId)
+      || publishedIds.has(match.rightId)
+      || coolingIds.has(match.leftId)
+      || coolingIds.has(match.rightId)
+      || !hardBoundaryCompatible(byId.get(match.leftId), byId.get(match.rightId))
+    )
   );
   if (hasInvalidDraft) {
     const generated = replaceRoundDraftMatches(data, roundId);
@@ -1771,6 +1805,7 @@ function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultD
     .filter(candidate => candidate.id !== profile.id)
     .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles))
     .filter(Boolean)
+    .filter(preview => !preview.hardBlocked)
     .sort((a, b) =>
       (b.crossWeight - a.crossWeight)
       || ((b.adjustedScore || 0) - (a.adjustedScore || 0))
@@ -2278,15 +2313,20 @@ async function handleApi(req, res, url) {
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/publish") {
       const roundId = currentRound(new Date(), data.settings).id;
+      const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
       let published = 0;
       data.matches.forEach(match => {
         if (match.roundId === roundId && match.status === "draft") {
+          const left = byId.get(match.leftId);
+          const right = byId.get(match.rightId);
+          if (!isActiveProfile(left) || !isActiveProfile(right) || !hardBoundaryCompatible(left, right)) return;
           match.status = "published";
           match.publishedAt = new Date().toISOString();
           match.updatedAt = new Date().toISOString();
           published += 1;
         }
       });
+      if (published > 0) replaceRoundDraftMatches(data, roundId);
       await writeJson(DATA_FILE, data);
       return sendJson(res, 200, { published, matches: serializeAdminMatches(data.matches, data.profiles, data.settings) });
     }
@@ -2295,6 +2335,7 @@ async function handleApi(req, res, url) {
       const right = data.profiles.find(item => item.id === cleanText(adminBody.rightId, 80));
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能进入候选。" });
+      if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
       return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/best-for") {
@@ -2337,6 +2378,7 @@ async function handleApi(req, res, url) {
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能被推送匹配。" });
+      if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
       const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
       const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles) : null;
       if (preview) {
