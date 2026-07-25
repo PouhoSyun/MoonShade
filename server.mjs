@@ -1369,6 +1369,15 @@ function pairKey(leftId, rightId) {
   return [leftId, rightId].sort().join("::");
 }
 
+function orderedProfilePair(left, right) {
+  if (!left || !right) return [left, right];
+  return String(left.id).localeCompare(String(right.id)) <= 0 ? [left, right] : [right, left];
+}
+
+function orderedPairIds(leftId, rightId) {
+  return String(leftId).localeCompare(String(rightId)) <= 0 ? [leftId, rightId] : [rightId, leftId];
+}
+
 function matchTime(match) {
   return new Date(match.publishedAt || match.updatedAt || match.createdAt || 0).getTime() || 0;
 }
@@ -1617,18 +1626,19 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const batchId = `${roundId}-${today}`;
   for (let i = 0; i < activePool.length; i += 1) {
     for (let j = i + 1; j < activePool.length; j += 1) {
-      const scored = scorePair(activePool[i], activePool[j]);
+      const [left, right] = orderedProfilePair(activePool[i], activePool[j]);
+      const scored = scorePair(left, right);
       if (!scored || scored.hardBlocked) continue;
-      const key = pairKey(activePool[i].id, activePool[j].id);
+      const key = pairKey(left.id, right.id);
       const repeatedCount = history.pairCounts.get(key) || 0;
-      const lastRepeat = history.lastPartners.get(activePool[i].id) === activePool[j].id || history.lastPartners.get(activePool[j].id) === activePool[i].id;
-      const leftFrequency = frequencies.get(activePool[i].id) || { personalWeight: 0 };
-      const rightFrequency = frequencies.get(activePool[j].id) || { personalWeight: 0 };
+      const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
+      const leftFrequency = frequencies.get(left.id) || { personalWeight: 0 };
+      const rightFrequency = frequencies.get(right.id) || { personalWeight: 0 };
       const personalWeight = roundWeight((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
       const crossWeight = roundWeight(personalWeight * scored.booleanGate * scored.orientationWeight);
       const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
       const adjustedScore = roundWeight(crossWeight * repeatFactor);
-      candidates.push({ left: activePool[i], right: activePool[j], adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
+      candidates.push({ left, right, adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
     }
   }
   candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
@@ -1701,9 +1711,30 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   return pairs;
 }
 
+function dedupeRoundDraftMatches(data, roundId) {
+  const seen = new Map();
+  const keepIds = new Set();
+  const draftMatches = data.matches
+    .filter(match => match.roundId === roundId && match.status === "draft")
+    .sort((a, b) => {
+      const scoreDelta = (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0);
+      return scoreDelta || (matchTime(b) - matchTime(a));
+    });
+  for (const match of draftMatches) {
+    const key = pairKey(match.leftId, match.rightId);
+    if (seen.has(key)) continue;
+    seen.set(key, match.id);
+    keepIds.add(match.id);
+  }
+  const before = data.matches.length;
+  data.matches = data.matches.filter(match => match.roundId !== roundId || match.status !== "draft" || keepIds.has(match.id));
+  return before !== data.matches.length;
+}
+
 function ensureDailyDraftMatches(data) {
   const roundId = currentRound(new Date(), data.settings).id;
   const today = localDateKey();
+  const deduped = dedupeRoundDraftMatches(data, roundId);
   const activeProfiles = data.profiles.filter(isActiveProfile);
   const activeIds = new Set(activeProfiles.map(profile => profile.id));
   const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
@@ -1729,10 +1760,10 @@ function ensureDailyDraftMatches(data) {
   );
   if (hasInvalidDraft) {
     const generated = replaceRoundDraftMatches(data, roundId);
-    return generated.length > 0;
+    return deduped || generated.length > 0;
   }
   const hasTodayDraft = data.matches.some(match => match.roundId === roundId && match.status === "draft" && match.generatedFor === today && match.algorithmVersion === DAILY_MATCH_ALGORITHM_VERSION);
-  if (hasTodayDraft) return false;
+  if (hasTodayDraft) return deduped;
   const generated = replaceRoundDraftMatches(data, roundId);
   return generated.length > 0;
 }
@@ -1747,6 +1778,7 @@ function replaceRoundDraftMatches(data, roundId) {
 
 function matchPreview(left, right, matches, settings, profiles = [left, right]) {
   if (!left || !right) return null;
+  [left, right] = orderedProfilePair(left, right);
   const frequencyPool = profiles.filter(profile => isActiveProfile(profile));
   const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings);
   const leftFrequency = frequencies.get(left.id);
@@ -2003,7 +2035,14 @@ function adminMatchProfile(profile, context = {}) {
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
   const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings);
-  return [...matches].sort((a, b) => {
+  const seenDraftPairs = new Set();
+  return [...matches].filter(match => {
+    if (match.status !== "draft") return true;
+    const key = `${match.roundId || ""}::${pairKey(match.leftId, match.rightId)}`;
+    if (seenDraftPairs.has(key)) return false;
+    seenDraftPairs.add(key);
+    return true;
+  }).sort((a, b) => {
     if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || 0) - (a.adjustedScore || 0);
     return matchTime(b) - matchTime(a);
   }).map(match => {
@@ -2321,6 +2360,7 @@ async function handleApi(req, res, url) {
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/publish") {
       const roundId = currentRound(new Date(), data.settings).id;
+      dedupeRoundDraftMatches(data, roundId);
       const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
       let published = 0;
       data.matches.forEach(match => {
@@ -2383,10 +2423,21 @@ async function handleApi(req, res, url) {
       if (!match) return sendJson(res, 404, { error: "匹配记录不存在。" });
       if (body.leftId) match.leftId = cleanText(body.leftId, 80);
       if (body.rightId) match.rightId = cleanText(body.rightId, 80);
+      if (match.leftId === match.rightId) return sendJson(res, 400, { error: "不能把同一个用户匹配给自己。" });
+      [match.leftId, match.rightId] = orderedPairIds(match.leftId, match.rightId);
       const left = data.profiles.find(item => item.id === match.leftId);
       const right = data.profiles.find(item => item.id === match.rightId);
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能被推送匹配。" });
       if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
+      if (match.status === "draft") {
+        const currentPairKey = pairKey(match.leftId, match.rightId);
+        data.matches = data.matches.filter(item =>
+          item.id === match.id
+          || item.roundId !== match.roundId
+          || item.status !== "draft"
+          || pairKey(item.leftId, item.rightId) !== currentPairKey
+        );
+      }
       const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
       const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles) : null;
       if (preview) {
