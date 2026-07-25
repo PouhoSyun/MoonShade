@@ -319,12 +319,12 @@ h1 {
 }
 
 .dashboard-grid {
-  width: min(1020px, 100%);
+  width: min(1160px, 100%);
   display: grid;
-  grid-template-columns: minmax(0, 700px) minmax(210px, 260px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   gap: 18px;
   justify-content: center;
-  align-items: start;
+  align-items: stretch;
 }
 
 .panel {
@@ -347,8 +347,10 @@ h1 {
 .dashboard-summary-panel {
   grid-column: 2;
   display: grid;
-  gap: 10px;
-  padding: 18px;
+  align-content: stretch;
+  gap: 0;
+  min-height: 100%;
+  padding: 22px 24px;
 }
 
 .dashboard-summary-panel div {
@@ -356,7 +358,7 @@ h1 {
   grid-template-columns: 1fr auto;
   align-items: baseline;
   gap: 12px;
-  padding: 10px 0;
+  padding: 14px 0;
   border-bottom: 1px solid rgba(96, 104, 111, 0.16);
 }
 
@@ -382,16 +384,12 @@ h1 {
 }
 
 .dashboard-summary-panel .summary-wide strong {
-  color: var(--rose);
+  color: #b89437;
   font-size: 28px;
 }
 
 .dashboard-grid .rhythm-panel {
-  grid-column: 1;
-}
-
-.dashboard-grid .balance-panel {
-  grid-column: 2;
+  grid-column: 1 / -1;
 }
 
 .status-panel {

@@ -458,7 +458,8 @@ function renderRound(payload) {
       ? "目前样本还少，系统会先保存画像；当可互相接受的人数增加后，匹配会更稳定。"
       : "同类画像越多，越容易稳定匹配；性别比例失衡、偏好过宽或过窄时，匹配频率和结果都会出现变化。";
   }
-  $("[data-announcements]").innerHTML = payload.announcements.map(item => `
+  const announcements = $("[data-announcements]");
+  if (announcements) announcements.innerHTML = payload.announcements.map(item => `
     <article class="announcement"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.body)}</span></article>
   `).join("");
   renderPersonalSchedule();
