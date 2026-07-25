@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>月影 MoonShade</title>
     <meta name="description" content="MoonShade 月影，非盈利校内交友社区。" />
-    <link rel="stylesheet" href="/styles.css?v=20260720-auth-log" />
+    <link rel="stylesheet" href="/styles.css?v=20260725-dashboard-compact" />
   </head>
   <body>
     <header class="topbar" aria-label="主导航">
@@ -13,7 +13,7 @@
         <span class="brand-dot"></span>
         <span>
           <strong>MoonShade 月影</strong>
-          <small class="app-version">version 1.9.0</small>
+          <small class="app-version">version 1.9.1</small>
         </span>
       </a>
       <nav>
@@ -33,7 +33,6 @@
           <div class="hero-copy">
             <div class="hero-kicker">
               <p class="eyebrow">非盈利校内交友社区</p>
-              <p class="hero-xhs-note">小红书：月影MoonShade</p>
             </div>
             <img class="hero-logo" src="/assets/logo.png" alt="月影 MoonShade" />
             <p>用同一轮月的清影</p>
@@ -98,24 +97,6 @@
       </section>
 
       <section id="dashboard" class="view app-view">
-        <aside class="round-list" aria-label="轮次列表">
-          <div class="round-card is-current">
-            <strong data-round-id>本轮</strong>
-            <span>正在收集画像</span>
-            <em data-participants>0 人参与</em>
-          </div>
-          <div class="round-card">
-            <strong>匹配节奏</strong>
-            <span data-match-frequency>原则上每 5 天一次</span>
-            <em>匹配时间可能浮动，仅供参考，具体以系统分配为准。</em>
-          </div>
-          <div class="round-card">
-            <strong>边界提示</strong>
-            <span>TA 的画像过宽或过窄都会影响匹配</span>
-            <em>建议定期更新</em>
-          </div>
-        </aside>
-
         <div class="dashboard-grid">
           <section class="panel status-panel" data-profile-status-panel>
             <p class="eyebrow">MoonShade · 本轮</p>
@@ -128,6 +109,25 @@
               <button class="secondary-action" type="button" data-toggle-match-paused>暂停匹配</button>
             </div>
             <p class="status-note" data-match-note>原则上每五天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
+          </section>
+
+          <section class="panel dashboard-summary-panel" aria-label="本轮匹配概览">
+            <div>
+              <span>参与用户</span>
+              <strong data-participants-count>0</strong>
+            </div>
+            <div>
+              <span>女生</span>
+              <strong data-women-count>0</strong>
+            </div>
+            <div>
+              <span>男生</span>
+              <strong data-men-count>0</strong>
+            </div>
+            <div class="summary-wide">
+              <span>预计匹配</span>
+              <strong data-summary-next-match>待生成</strong>
+            </div>
           </section>
 
           <section class="panel half rhythm-panel">
@@ -246,6 +246,6 @@
         document.querySelectorAll("[data-force-logout]").forEach(button => { button.hidden = !authed; });
       })();
     </script>
-    <script src="/app.js?v=20260721-public-status-rank" defer></script>
+    <script src="/app.js?v=20260725-dashboard-compact" defer></script>
   </body>
 </html>

@@ -319,10 +319,12 @@ h1 {
 }
 
 .dashboard-grid {
-  width: min(980px, 100%);
+  width: min(1020px, 100%);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 700px) minmax(210px, 260px);
   gap: 18px;
+  justify-content: center;
+  align-items: start;
 }
 
 .panel {
@@ -336,6 +338,60 @@ h1 {
 .wide,
 .result-intro {
   grid-column: 1 / -1;
+}
+
+.dashboard-grid .status-panel {
+  grid-column: 1;
+}
+
+.dashboard-summary-panel {
+  grid-column: 2;
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.dashboard-summary-panel div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(96, 104, 111, 0.16);
+}
+
+.dashboard-summary-panel div:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-summary-panel span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.dashboard-summary-panel strong {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.dashboard-summary-panel .summary-wide {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.dashboard-summary-panel .summary-wide strong {
+  color: var(--rose);
+  font-size: 28px;
+}
+
+.dashboard-grid .rhythm-panel {
+  grid-column: 1;
+}
+
+.dashboard-grid .balance-panel {
+  grid-column: 2;
 }
 
 .status-panel {
@@ -901,6 +957,13 @@ textarea:focus {
   .match-list,
   .split-row {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid .status-panel,
+  .dashboard-summary-panel,
+  .dashboard-grid .rhythm-panel,
+  .dashboard-grid .balance-panel {
+    grid-column: 1;
   }
 
   .question-row,
@@ -3024,21 +3087,6 @@ main,
   text-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
 }
 
-.hero-xhs-note {
-  margin: 0;
-  padding: 4px 9px 5px;
-  border: 1px solid rgba(231, 199, 98, 0.28);
-  border-radius: 999px;
-  color: rgba(247, 241, 215, 0.84);
-  background: rgba(8, 16, 39, 0.42);
-  backdrop-filter: blur(10px);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  text-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
-}
-
 .community-modal[hidden] {
   display: none;
 }
@@ -3121,10 +3169,6 @@ main,
   .hero-kicker {
     flex-wrap: wrap;
     gap: 8px 12px;
-  }
-
-  .hero-xhs-note {
-    font-size: 10px;
   }
 }
 

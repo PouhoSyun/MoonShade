@@ -1,9 +1,9 @@
 const tokenKey = "moonshade.token";
 const authKey = "moonshade.authToken";
-window.__MOONSHADE_APP_VERSION__ = "20260720-ruc-school";
+window.__MOONSHADE_APP_VERSION__ = "20260725-dashboard-compact";
 
 const optionSets = {
-  genders: ["女", "男", "非二元", "暂不透露"],
+  genders: ["女", "男", "非二元"],
   seeking: ["女", "男", "非二元", "不限"],
   years: Array.from({ length: 21 }, (_, index) => String(1990 + index)),
   identities: ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"],
@@ -303,6 +303,24 @@ function matchScheduleNotice(frequency) {
   return `${metricText}匹配时间可能浮动，仅供参考，具体以系统分配为准。`;
 }
 
+function summaryNextMatchText(frequency) {
+  if (state.profile?.matchPaused) return "已暂停";
+  if (frequency?.expectedNextAllocationAt) return formatDateOnly(frequency.expectedNextAllocationAt);
+  if (hasAuthToken()) return "提交后生成";
+  return formatDateOnly(state.round?.closesAt || new Date());
+}
+
+function renderDashboardSummary(stats = {}) {
+  const participants = $("[data-participants-count]");
+  const women = $("[data-women-count]");
+  const men = $("[data-men-count]");
+  const nextMatch = $("[data-summary-next-match]");
+  if (participants) participants.textContent = String(Number(stats.participants) || 0);
+  if (women) women.textContent = String(Number(stats.women) || 0);
+  if (men) men.textContent = String(Number(stats.men) || 0);
+  if (nextMatch) nextMatch.textContent = summaryNextMatchText(state.profile?.matchFrequency);
+}
+
 function renderPersonalSchedule() {
   const el = $("[data-countdown]");
   const frequency = state.profile?.matchFrequency;
@@ -353,6 +371,8 @@ function renderPersonalSchedule() {
       ? `参考间隔 ${frequency.intervalDays} 天`
       : `参考间隔 ${interval} 天`;
   }
+  const nextMatch = $("[data-summary-next-match]");
+  if (nextMatch) nextMatch.textContent = summaryNextMatchText(frequency);
   renderMatchPauseControl();
 }
 
@@ -420,8 +440,11 @@ function renderRound(payload) {
   const matchedPeople = Number(payload.stats?.matchedPeople) || 0;
   const matchedPeopleTarget = $("[data-matched-people]");
   if (matchedPeopleTarget) matchedPeopleTarget.textContent = `已匹配 ${matchedPeople} 人次`;
-  $("[data-round-id]").textContent = formatDateOnly(new Date());
-  $("[data-participants]").textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
+  const roundId = $("[data-round-id]");
+  if (roundId) roundId.textContent = formatDateOnly(new Date());
+  const participants = $("[data-participants]");
+  if (participants) participants.textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
+  renderDashboardSummary(payload.stats);
   $("[data-dashboard-title]").textContent = `${formatDateOnly(new Date())} 画像池更新中`;
   $("[data-close-time]").textContent = `个人下次分配参考：${formatDateOnly(payload.round.closesAt)}`;
   $("[data-result-time]").textContent = profileMetricLine(state.profile?.matchFrequency);
@@ -952,6 +975,7 @@ function cleanProfileFieldValue(key, value) {
   if (key === "location" || key === "idealLocations") {
     return Array.isArray(value) ? [...new Set(value.map(normalizeCampus).filter(item => optionSets.locations.includes(item)))] : [];
   }
+  if (key === "gender") return valueInOptions(value, optionSets.genders) ? value : "";
   if (key === "intimacy") return valueInOptions(value, optionSets.intimacy) ? value : "";
   if (key === "idealIntimacy") return Array.isArray(value) ? value.filter(item => optionSets.intimacy.includes(item)) : [];
   if (key === "intimacyTiming") return valueInOptions(value, optionSets.intimacyTiming) ? value : "";

@@ -49,6 +49,7 @@ const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位
 const PKU_LOCATIONS = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"];
 const RUC_LOCATIONS = ["海淀", "通州", "苏州"];
 const ALLOWED_LOCATIONS = [...PKU_LOCATIONS, ...RUC_LOCATIONS];
+const CURRENT_GENDERS = ["女", "男", "非二元"];
 const LOCATION_ALIASES = {
   人民医院: "医院系统",
   第一医院: "医院系统",
@@ -250,6 +251,7 @@ function normalizeData(data) {
     ...profile,
     matchPaused: profile.matchPaused === true,
     matchPausedAt: cleanText(profile.matchPausedAt, 40),
+    matchResumedAt: cleanText(profile.matchResumedAt, 40),
     discipline: normalizeDiscipline(profile.discipline),
     department: normalizeDiscipline(profile.department),
     idealDisciplines: normalizeDisciplineList(profile.idealDisciplines),
@@ -674,7 +676,7 @@ function currentRound(now = new Date(), settings = defaultData.settings) {
 }
 
 function sanitizeProfile(input, existing = {}, settings = defaultData.settings) {
-  const allowedGenders = ["女", "男", "非二元", "暂不透露"];
+  const allowedGenders = CURRENT_GENDERS;
   const allowedSeek = ["女", "男", "非二元", "不限"];
   const allowedIdentities = ["本科生", "硕士生", "博士生", "毕业工作", "自由探索"];
   const allowedSchoolTypes = ALLOWED_SCHOOL_TYPES;
@@ -761,6 +763,7 @@ function sanitizeProfile(input, existing = {}, settings = defaultData.settings) 
     consent: input.consent === true,
     matchPaused: existing.matchPaused === true,
     matchPausedAt: existing.matchPausedAt || "",
+    matchResumedAt: existing.matchResumedAt || "",
     updatedAt: new Date().toISOString(),
     createdAt: existing.createdAt || new Date().toISOString()
   };
@@ -921,6 +924,7 @@ function gapCoefficient(daysSince) {
 }
 
 function genderRatioCoefficient(profile, profiles = []) {
+  if (profile.gender === "非二元") return 0.45;
   const same = profiles.filter(item => item.gender && item.gender === profile.gender).length;
   const compatible = profiles.filter(item => item.id !== profile.id && genderCompatible(profile, item)).length;
   if (!same || !compatible) return 1;
@@ -1040,10 +1044,14 @@ function stableNoiseDays(profile, settings = defaultData.settings) {
 }
 
 function stableReferenceAt(profile, lastAt, now = Date.now()) {
-  if (lastAt) return localDayStartMs(lastAt) || lastAt;
+  const todayStart = localDayStartMs(now) || now;
+  const candidates = [];
+  if (lastAt) candidates.push(localDayStartMs(lastAt) || lastAt);
+  const resumedAt = new Date(profile.matchResumedAt || 0).getTime();
+  if (resumedAt) candidates.push(localDayStartMs(resumedAt) || resumedAt);
   const createdAt = new Date(profile.createdAt || profile.updatedAt || 0).getTime();
-  if (createdAt) return localDayStartMs(createdAt) || createdAt;
-  return localDayStartMs(now) || now;
+  if (createdAt) candidates.push(localDayStartMs(createdAt) || createdAt);
+  return Math.max(todayStart, ...candidates.filter(Number.isFinite));
 }
 
 function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, settings = defaultData.settings, now = Date.now()) {
@@ -2481,6 +2489,7 @@ async function handleApi(req, res, url) {
     const paused = body.paused === true;
     profile.matchPaused = paused;
     profile.matchPausedAt = paused ? new Date().toISOString() : "";
+    profile.matchResumedAt = paused ? "" : new Date().toISOString();
     profile.updatedAt = new Date().toISOString();
     const roundId = currentRound(new Date(), data.settings).id;
     if (paused) {
