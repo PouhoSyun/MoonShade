@@ -1220,23 +1220,34 @@ function acceptableHit(actualValue, acceptableValues) {
 function addAcceptableWarning(warnings, owner, candidate, options) {
   const { field, label, acceptable, actual, actualLabel, strict = false, weight = 0.95 } = options;
   if (acceptableHit(actual, acceptable)) return;
+  const ownerLabel = profileRoleLabel(owner);
+  const candidateLabel = profileRoleLabel(candidate);
   warnings.push({
     field,
     strict,
     weight,
     label,
-    message: `${owner.displayName || "一方"} 可接受 ${listText(acceptable)}，${candidate.displayName || "对方"} 的${actualLabel || label}为 ${listText(actual)}。`
+    message: `${ownerLabel}可接受 ${listText(acceptable)}，${candidateLabel}的${actualLabel || label}为 ${listText(actual)}。`
   });
+}
+
+function profileRoleLabel(profile) {
+  if (profile?.gender === "女") return "女生";
+  if (profile?.gender === "男") return "男生";
+  if (profile?.gender === "非二元") return "非二元用户";
+  return "该用户";
 }
 
 function matchBoundaryWarnings(a, b) {
   const warnings = [];
+  const aLabel = profileRoleLabel(a);
+  const bLabel = profileRoleLabel(b);
   if (!genderCompatible(a, b)) {
     warnings.push({
       field: "gender",
       strict: true,
       label: "性别边界不符合",
-      message: `${a.displayName || "Moon"} 希望认识 ${listText(a.seeking)}，${b.displayName || "Shade"} 性别为 ${b.gender || "未填写"}；${b.displayName || "Shade"} 希望认识 ${listText(b.seeking)}，${a.displayName || "Moon"} 性别为 ${a.gender || "未填写"}。`
+      message: `${aLabel}希望认识 ${listText(a.seeking)}，${bLabel}性别为 ${b.gender || "未填写"}；${bLabel}希望认识 ${listText(b.seeking)}，${aLabel}性别为 ${a.gender || "未填写"}。`
     });
   }
 
@@ -1248,16 +1259,16 @@ function matchBoundaryWarnings(a, b) {
     warnings.push({
       field: "age",
       strict: true,
-      label: "出生年不在 Moon 期待范围",
-      message: `${a.displayName || "Moon"} 期待 ${rangeText(a.idealBirthYearMin, a.idealBirthYearMax)}，${b.displayName || "Shade"} 为 ${bYear}。`
+      label: `出生年不在${aLabel}期待范围`,
+      message: `${aLabel}期待 ${rangeText(a.idealBirthYearMin, a.idealBirthYearMax)}，${bLabel}为 ${bYear}。`
     });
   }
   if (bHasRange && aYear && !yearInRange(aYear, b.idealBirthYearMin, b.idealBirthYearMax)) {
     warnings.push({
       field: "age",
       strict: true,
-      label: "出生年不在 Shade 期待范围",
-      message: `${b.displayName || "Shade"} 期待 ${rangeText(b.idealBirthYearMin, b.idealBirthYearMax)}，${a.displayName || "Moon"} 为 ${aYear}。`
+      label: `出生年不在${bLabel}期待范围`,
+      message: `${bLabel}期待 ${rangeText(b.idealBirthYearMin, b.idealBirthYearMax)}，${aLabel}为 ${aYear}。`
     });
   }
 
@@ -1265,22 +1276,22 @@ function matchBoundaryWarnings(a, b) {
     warnings.push({
       field: "location",
       strict: true,
-      label: "校区不在 Moon 可接受范围",
-      message: `${a.displayName || "Moon"} 可接受 ${listText(a.idealLocations)}，${b.displayName || "Shade"} 在 ${listText(b.location || b.city)}。`
+      label: `校区不在${aLabel}可接受范围`,
+      message: `${aLabel}可接受 ${listText(a.idealLocations)}，${bLabel}在 ${listText(b.location || b.city)}。`
     });
   }
   if (!locationAccepted(a.location || a.city, b.idealLocations)) {
     warnings.push({
       field: "location",
       strict: true,
-      label: "校区不在 Shade 可接受范围",
-      message: `${b.displayName || "Shade"} 可接受 ${listText(b.idealLocations)}，${a.displayName || "Moon"} 在 ${listText(a.location || a.city)}。`
+      label: `校区不在${bLabel}可接受范围`,
+      message: `${bLabel}可接受 ${listText(b.idealLocations)}，${aLabel}在 ${listText(a.location || a.city)}。`
     });
   }
 
   addAcceptableWarning(warnings, a, b, {
     field: "schoolType",
-    label: "院校背景不在 Moon 可接受范围",
+    label: `院校背景不在${aLabel}可接受范围`,
     acceptable: a.idealSchoolTypes,
     actual: b.schoolType,
     actualLabel: "院校背景",
@@ -1289,7 +1300,7 @@ function matchBoundaryWarnings(a, b) {
   });
   addAcceptableWarning(warnings, b, a, {
     field: "schoolType",
-    label: "院校背景不在 Shade 可接受范围",
+    label: `院校背景不在${bLabel}可接受范围`,
     acceptable: b.idealSchoolTypes,
     actual: a.schoolType,
     actualLabel: "院校背景",
@@ -1303,8 +1314,8 @@ function matchBoundaryWarnings(a, b) {
     ["discipline", "专业方向", "专业方向", "idealDisciplines", profile => profile.discipline || profile.department, 0.86]
   ];
   for (const [field, label, actualLabel, idealKey, actualGetter, weight] of softVolumeChecks) {
-    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel, strict: false, weight });
-    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel, strict: false, weight });
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在${aLabel}可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel, strict: false, weight });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在${bLabel}可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel, strict: false, weight });
   }
 
   const otherAcceptableChecks = [
@@ -1320,8 +1331,8 @@ function matchBoundaryWarnings(a, b) {
     ["glasses", "眼镜状态", "眼镜状态", "idealGlasses", profile => profile.glasses]
   ];
   for (const [field, label, actualLabel, idealKey, actualGetter] of otherAcceptableChecks) {
-    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在 Moon 可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
-    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在 Shade 可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
+    addAcceptableWarning(warnings, a, b, { field, label: `${label}不在${aLabel}可接受范围`, acceptable: a[idealKey], actual: actualGetter(b), actualLabel });
+    addAcceptableWarning(warnings, b, a, { field, label: `${label}不在${bLabel}可接受范围`, acceptable: b[idealKey], actual: actualGetter(a), actualLabel });
   }
   return warnings;
 }
@@ -1378,6 +1389,27 @@ function orderedPairIds(leftId, rightId) {
   return String(leftId).localeCompare(String(rightId)) <= 0 ? [leftId, rightId] : [rightId, leftId];
 }
 
+function displayOrderRank(profile) {
+  if (profile?.gender === "女") return 0;
+  if (profile?.gender === "非二元") return 1;
+  if (profile?.gender === "男") return 2;
+  return 3;
+}
+
+function displayOrderedProfilePair(left, right) {
+  if (!left || !right) return [left, right];
+  const leftRank = displayOrderRank(left);
+  const rightRank = displayOrderRank(right);
+  if (leftRank !== rightRank) return leftRank < rightRank ? [left, right] : [right, left];
+  return orderedProfilePair(left, right);
+}
+
+function displayOrderedPairIds(leftId, rightId, byId = new Map()) {
+  const [left, right] = displayOrderedProfilePair(byId.get(leftId), byId.get(rightId));
+  if (left?.id && right?.id) return [left.id, right.id];
+  return orderedPairIds(leftId, rightId);
+}
+
 function matchTime(match) {
   return new Date(match.publishedAt || match.updatedAt || match.createdAt || 0).getTime() || 0;
 }
@@ -1401,6 +1433,16 @@ function matchHistory(matches = []) {
     }
   }
   return { pairCounts, lastPartners, lastMatchedAt };
+}
+
+function historicalPairKeys(matches = []) {
+  return new Set(matches
+    .filter(match => match.status === "published")
+    .map(match => pairKey(match.leftId, match.rightId)));
+}
+
+function pairRepeatFactor(repeatedCount) {
+  return repeatedCount > 0 ? 0 : 1;
 }
 
 function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map(), rankContext = profileRankContext(profiles)) {
@@ -1606,6 +1648,7 @@ function selectedCandidateMatches(candidates, targetCount = 6) {
 
 function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
   const history = matchHistory(matches);
+  const historicalPairs = historicalPairKeys(matches);
   const activeProfiles = profiles.filter(isActiveProfile);
   const frequencies = frequencyMapFor(activeProfiles, matches, settings);
   const publishedParticipantIds = new Set(matches
@@ -1626,17 +1669,18 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
   const batchId = `${roundId}-${today}`;
   for (let i = 0; i < activePool.length; i += 1) {
     for (let j = i + 1; j < activePool.length; j += 1) {
-      const [left, right] = orderedProfilePair(activePool[i], activePool[j]);
+      const [left, right] = displayOrderedProfilePair(activePool[i], activePool[j]);
       const scored = scorePair(left, right);
       if (!scored || scored.hardBlocked) continue;
       const key = pairKey(left.id, right.id);
+      if (historicalPairs.has(key)) continue;
       const repeatedCount = history.pairCounts.get(key) || 0;
       const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
       const leftFrequency = frequencies.get(left.id) || { personalWeight: 0 };
       const rightFrequency = frequencies.get(right.id) || { personalWeight: 0 };
       const personalWeight = roundWeight((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
       const crossWeight = roundWeight(personalWeight * scored.booleanGate * scored.orientationWeight);
-      const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
+      const repeatFactor = pairRepeatFactor(repeatedCount);
       const adjustedScore = roundWeight(crossWeight * repeatFactor);
       candidates.push({ left, right, adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
     }
@@ -1714,8 +1758,9 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
 function dedupeRoundDraftMatches(data, roundId) {
   const seen = new Map();
   const keepIds = new Set();
+  const publishedPairs = historicalPairKeys(data.matches);
   const draftMatches = data.matches
-    .filter(match => match.roundId === roundId && match.status === "draft")
+    .filter(match => match.roundId === roundId && match.status === "draft" && !publishedPairs.has(pairKey(match.leftId, match.rightId)))
     .sort((a, b) => {
       const scoreDelta = (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0);
       return scoreDelta || (matchTime(b) - matchTime(a));
@@ -1778,7 +1823,7 @@ function replaceRoundDraftMatches(data, roundId) {
 
 function matchPreview(left, right, matches, settings, profiles = [left, right]) {
   if (!left || !right) return null;
-  [left, right] = orderedProfilePair(left, right);
+  [left, right] = displayOrderedProfilePair(left, right);
   const frequencyPool = profiles.filter(profile => isActiveProfile(profile));
   const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings);
   const leftFrequency = frequencies.get(left.id);
@@ -1792,7 +1837,7 @@ function matchPreview(left, right, matches, settings, profiles = [left, right]) 
   const history = matchHistory(matches);
   const repeatedCount = history.pairCounts.get(key) || 0;
   const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
-  const repeatFactor = roundWeight((0.72 ** repeatedCount) * (lastRepeat ? 0.65 : 1));
+  const repeatFactor = pairRepeatFactor(repeatedCount);
   const finalWeight = roundWeight(crossWeight * repeatFactor);
   return {
     hardBlocked,
@@ -1846,6 +1891,8 @@ function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultD
     .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles))
     .filter(Boolean)
     .filter(preview => !preview.hardBlocked)
+    .filter(preview => (preview.weightBreakdown?.repeatFactor ?? 1) > 0)
+    .filter(preview => (preview.adjustedScore || 0) > 0)
     .sort((a, b) =>
       (b.crossWeight - a.crossWeight)
       || ((b.adjustedScore || 0) - (a.adjustedScore || 0))
@@ -2035,24 +2082,54 @@ function adminMatchProfile(profile, context = {}) {
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
   const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings);
+  const publishedPairs = historicalPairKeys(historyMatches);
   const seenDraftPairs = new Set();
-  return [...matches].filter(match => {
+  return [...matches].sort((a, b) => {
+    if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0);
+    return matchTime(b) - matchTime(a);
+  }).filter(match => {
     if (match.status !== "draft") return true;
-    const key = `${match.roundId || ""}::${pairKey(match.leftId, match.rightId)}`;
+    const pair = pairKey(match.leftId, match.rightId);
+    if (publishedPairs.has(pair)) return false;
+    const key = `${match.roundId || ""}::${pair}`;
     if (seenDraftPairs.has(key)) return false;
     seenDraftPairs.add(key);
     return true;
-  }).sort((a, b) => {
-    if (a.status === "draft" && b.status === "draft") return (b.adjustedScore || 0) - (a.adjustedScore || 0);
-    return matchTime(b) - matchTime(a);
   }).map(match => {
     const leftProfile = byId.get(match.leftId);
     const rightProfile = byId.get(match.rightId);
+    const historyForPreview = historyMatches.filter(item => item.status === "published" && item.id !== match.id);
+    const preview = leftProfile && rightProfile
+      ? matchPreview(leftProfile, rightProfile, historyForPreview, settings, profiles)
+      : null;
     return {
       ...match,
-      boundaryWarnings: leftProfile && rightProfile ? matchBoundaryWarnings(leftProfile, rightProfile) : [],
-      left: leftProfile ? adminMatchProfile(leftProfile, { frequencyMap: frequencies }) : null,
-      right: rightProfile ? adminMatchProfile(rightProfile, { frequencyMap: frequencies }) : null
+      ...(preview ? {
+        leftId: preview.left?.id || match.leftId,
+        rightId: preview.right?.id || match.rightId,
+        score: preview.score,
+        adjustedScore: preview.adjustedScore,
+        crossWeight: preview.crossWeight,
+        personalWeight: preview.personalWeight,
+        booleanGate: preview.booleanGate,
+        orientationWeight: preview.orientationWeight,
+        interestMatchCount: preview.interestMatchCount,
+        freeTextInterestHits: preview.freeTextInterestHits,
+        softViolationCount: preview.softViolationCount,
+        hardBlocked: preview.hardBlocked,
+        reasons: [
+          ...(preview.reasons || []),
+          `个人权重乘积 ${preview.personalWeight}`,
+          `布尔门槛 ${preview.booleanGate}`,
+          `取向权重 ${preview.orientationWeight}`,
+          `交叉权重 ${preview.crossWeight}`,
+          preview.weightBreakdown?.repeatFactor === 0 ? "历史已出现，重复降权系数 0" : "无历史重复降权"
+        ].slice(0, 8),
+        weightBreakdown: preview.weightBreakdown
+      } : {}),
+      boundaryWarnings: preview?.boundaryWarnings || (leftProfile && rightProfile ? matchBoundaryWarnings(leftProfile, rightProfile) : []),
+      left: preview?.left || (leftProfile ? adminMatchProfile(leftProfile, { frequencyMap: frequencies }) : null),
+      right: preview?.right || (rightProfile ? adminMatchProfile(rightProfile, { frequencyMap: frequencies }) : null)
     };
   });
 }
@@ -2362,12 +2439,14 @@ async function handleApi(req, res, url) {
       const roundId = currentRound(new Date(), data.settings).id;
       dedupeRoundDraftMatches(data, roundId);
       const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
+      const publishedPairs = historicalPairKeys(data.matches);
       let published = 0;
       data.matches.forEach(match => {
         if (match.roundId === roundId && match.status === "draft") {
           const left = byId.get(match.leftId);
           const right = byId.get(match.rightId);
           if (!isActiveProfile(left) || !isActiveProfile(right) || !hardBoundaryCompatible(left, right)) return;
+          if (publishedPairs.has(pairKey(match.leftId, match.rightId))) return;
           match.status = "published";
           match.publishedAt = new Date().toISOString();
           match.updatedAt = new Date().toISOString();
@@ -2424,11 +2503,18 @@ async function handleApi(req, res, url) {
       if (body.leftId) match.leftId = cleanText(body.leftId, 80);
       if (body.rightId) match.rightId = cleanText(body.rightId, 80);
       if (match.leftId === match.rightId) return sendJson(res, 400, { error: "不能把同一个用户匹配给自己。" });
-      [match.leftId, match.rightId] = orderedPairIds(match.leftId, match.rightId);
-      const left = data.profiles.find(item => item.id === match.leftId);
-      const right = data.profiles.find(item => item.id === match.rightId);
+      const byIdForOrder = new Map(data.profiles.map(profile => [profile.id, profile]));
+      [match.leftId, match.rightId] = displayOrderedPairIds(match.leftId, match.rightId, byIdForOrder);
+      const left = byIdForOrder.get(match.leftId);
+      const right = byIdForOrder.get(match.rightId);
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能被推送匹配。" });
       if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
+      const publishedPairKeys = historicalPairKeys(data.matches.filter(item => item.id !== match.id));
+      if (publishedPairKeys.has(pairKey(match.leftId, match.rightId))) {
+        data.matches = data.matches.filter(item => item.id !== match.id);
+        await writeJson(DATA_FILE, data);
+        return sendJson(res, 409, { error: "这两位用户已经出现过匹配，不会再次进入候选或推送。" });
+      }
       if (match.status === "draft") {
         const currentPairKey = pairKey(match.leftId, match.rightId);
         data.matches = data.matches.filter(item =>

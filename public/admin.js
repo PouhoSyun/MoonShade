@@ -37,6 +37,13 @@ function profileLabel(profile) {
   return [profile.displayName, profile.email, profile.gender, formatValue(profile.location), profile.discipline].filter(Boolean).join(" · ");
 }
 
+function profileRoleLabel(profile) {
+  if (profile?.gender === "女") return "女生";
+  if (profile?.gender === "男") return "男生";
+  if (profile?.gender === "非二元") return "非二元";
+  return "用户";
+}
+
 function formatValue(value) {
   if (Array.isArray(value)) return value.filter(Boolean).join("、");
   if (value && typeof value === "object") {
@@ -858,6 +865,10 @@ async function previewMatch(card) {
       })
     });
     const preview = payload.preview;
+    if (preview.left?.id && preview.right?.id) {
+      updateSelectOptions(leftSelect, preview.left.id, preview.right.id);
+      updateSelectOptions(rightSelect, preview.right.id, preview.left.id);
+    }
     card.querySelector(".match-admin-head strong").textContent = `最终权重 ${formatWeight(preview.adjustedScore ?? preview.weightBreakdown?.finalWeight ?? preview.score)}`;
     card.querySelector(".match-admin-head small").textContent = `交叉 ${formatWeight(preview.crossWeight ?? preview.score)} · 个人乘积 ${formatWeight(preview.personalWeight)} · 布尔 ${formatWeight(preview.booleanGate)} · 取向 ${formatWeight(preview.orientationWeight)}`;
     if (diagnostics) diagnostics.outerHTML = renderMatchDiagnostics(preview);
@@ -913,10 +924,10 @@ function renderMatches() {
         <small>交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · 个人乘积 ${escapeHtml(formatWeight(match.personalWeight))} · 布尔 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))} · 取向 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</small>
         ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
-      <label>Moon
+      <label>${escapeHtml(profileRoleLabel(match.left))}
         <select data-left-id>${compatibleProfileOptions(match.leftId, match.rightId)}</select>
       </label>
-      <label>Shade
+      <label>${escapeHtml(profileRoleLabel(match.right))}
         <select data-right-id>${compatibleProfileOptions(match.rightId, match.leftId)}</select>
       </label>
       ${renderMatchDiagnostics(match)}
