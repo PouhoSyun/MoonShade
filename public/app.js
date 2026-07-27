@@ -276,6 +276,7 @@ function hasAuthToken() {
 
 function schedulePhrase(frequency) {
   if (state.profile?.matchPaused) return "已暂停匹配";
+  if (frequency?.eligible) return "已到可分配窗口，请等待系统推送";
   return `预计下次匹配日期：${frequency?.expectedNextAllocationAt ? formatDateOnly(frequency.expectedNextAllocationAt) : "提交问卷后生成"}`;
 }
 
@@ -305,6 +306,7 @@ function matchScheduleNotice(frequency) {
 
 function summaryNextMatchText(frequency) {
   if (state.profile?.matchPaused) return "已暂停";
+  if (frequency?.eligible) return "已到可分配";
   if (frequency?.expectedNextAllocationAt) return formatDateOnly(frequency.expectedNextAllocationAt);
   if (hasAuthToken()) return "提交后生成";
   return formatDateOnly(state.round?.closesAt || new Date());
@@ -336,7 +338,9 @@ function renderPersonalSchedule() {
     if (paused) {
       el.innerHTML = `<span><strong>已暂停匹配</strong></span>`;
     } else if (frequency) {
-      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong></span>`;
+      el.innerHTML = frequency.eligible
+        ? `<span><strong>已到可分配</strong></span>`
+        : `<span><strong>${escapeHtml(formatDateOnly(frequency.expectedNextAllocationAt))}</strong></span>`;
     } else if (hasAuthToken()) {
       el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
     } else {
@@ -354,7 +358,7 @@ function renderPersonalSchedule() {
     closeTime.textContent = paused
       ? "已暂停匹配"
       : frequency
-      ? `个人下次分配参考：${formatDateOnly(frequency.expectedNextAllocationAt)}`
+      ? `个人下次分配参考：${frequency.eligible ? "已到可分配" : formatDateOnly(frequency.expectedNextAllocationAt)}`
       : "个人下次分配参考：提交问卷后生成";
   }
   const resultTime = $("[data-result-time]");

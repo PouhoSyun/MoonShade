@@ -1125,14 +1125,10 @@ function stableNoiseDays(profile, settings = defaultData.settings) {
 }
 
 function stableReferenceAt(profile, lastAt, now = Date.now()) {
-  const todayStart = localDayStartMs(now) || now;
-  const candidates = [];
-  if (lastAt) candidates.push(localDayStartMs(lastAt) || lastAt);
-  const resumedAt = new Date(profile.matchResumedAt || 0).getTime();
-  if (resumedAt) candidates.push(localDayStartMs(resumedAt) || resumedAt);
+  if (lastAt) return localDayStartMs(lastAt) || lastAt;
   const createdAt = new Date(profile.createdAt || profile.updatedAt || 0).getTime();
-  if (createdAt) candidates.push(localDayStartMs(createdAt) || createdAt);
-  return Math.max(todayStart, ...candidates.filter(Number.isFinite));
+  if (createdAt) return localDayStartMs(createdAt) || createdAt;
+  return localDayStartMs(now) || now;
 }
 
 function expectedAllocationDateMs(profile, profiles, lastAt, personalWeight, settings = defaultData.settings, now = Date.now()) {

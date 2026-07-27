@@ -138,6 +138,7 @@ function formatDateOnly(value) {
 
 function scheduleText(frequency) {
   if (!frequency) return "暂无";
+  if (frequency.eligible) return "已到可分配";
   return formatDateOnly(frequency.expectedNextAllocationAt);
 }
 
