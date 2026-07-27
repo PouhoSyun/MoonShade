@@ -8,6 +8,7 @@ const state = {
   matches: [],
   announcements: [],
   community: {},
+  weightParameters: null,
   communityQrDraft: "",
   settings: null,
   round: null,
@@ -34,7 +35,14 @@ function escapeHtml(value) {
 }
 
 function profileLabel(profile) {
-  return [profile.displayName, profile.email, profile.gender, formatValue(profile.location), profile.discipline].filter(Boolean).join(" · ");
+  return [
+    profile.displayName,
+    studentIdOnly(profile.email),
+    profile.gender,
+    formatValue(profile.location),
+    profile.discipline,
+    `上次匹配 ${lastMatchText(profile.matchFrequency)}`
+  ].filter(Boolean).join(" · ");
 }
 
 function profileRoleLabel(profile) {
@@ -148,6 +156,10 @@ function studentIdFromEmail(email) {
   if (/@(?:stu\.)?pku\.edu\.cn$/.test(normalized)) return `北大 ${id}`;
   if (/@ruc\.edu\.cn$/.test(normalized)) return `人大 ${id}`;
   return id;
+}
+
+function studentIdOnly(email) {
+  return String(email || "").match(/^(\d{10})@/)?.[1] || "-";
 }
 
 function formatWeight(value) {
@@ -375,6 +387,7 @@ async function loadAdmin() {
   state.community = communityPayload.community || {};
   state.settings = settingsPayload.settings;
   state.round = settingsPayload.round;
+  state.weightParameters = settingsPayload.weightParameters || null;
   if (!state.selectedProfileId && state.profiles.length) state.selectedProfileId = state.profiles[0].id;
   $("[data-admin-login]").hidden = true;
   $("[data-admin-console]").hidden = false;
@@ -417,6 +430,14 @@ function renderSettings() {
   $("[data-admin-round-note]").textContent = state.round
     ? `${state.round.label}。推送后自动补齐 6 条当前最高权重候选；已发布可撤回。`
     : "轮次信息加载中。";
+  const weightSummary = $("[data-weight-parameters-summary]");
+  if (weightSummary) {
+    const generatedAt = state.weightParameters?.generatedAt ? formatDateTime(state.weightParameters.generatedAt) : "";
+    const count = Number(state.weightParameters?.profileCount) || 0;
+    weightSummary.textContent = generatedAt
+      ? `权重参数 ${generatedAt} 更新 · ${count} 份活跃问卷 · ${state.weightParameters.version || "未知版本"}`
+      : "尚未生成权重参数；未更新时会临时按当前问卷计算。";
+  }
 }
 
 function renderAnnouncements() {
@@ -800,6 +821,7 @@ function renderMatchDiagnostics(match) {
         ${match.left?.matchFrequency ? `<span>${escapeHtml(match.left.displayName)}：个人 ${escapeHtml(personalWeightValue(match.left.matchFrequency))}</span>` : ""}
         ${match.right?.matchFrequency ? `<span>${escapeHtml(match.right.displayName)}：个人 ${escapeHtml(personalWeightValue(match.right.matchFrequency))}</span>` : ""}
         <span>个人乘积 ${escapeHtml(formatWeight(match.personalWeight))}</span>
+        <span>个人调节 ${escapeHtml(formatWeight(match.priorityWeight ?? match.weightBreakdown?.priorityWeight ?? 1))}</span>
         <span>布尔门槛 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))}</span>
         <span>取向权重 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</span>
         <span>交叉权重 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))}</span>
@@ -832,7 +854,7 @@ function renderBestMatchTool() {
       <strong>${escapeHtml(state.bestMatch.target?.displayName || "目标用户")}</strong>
       ×
       <strong>${escapeHtml(state.bestMatch.best?.displayName || "最佳对象")}</strong>
-      <span>交叉 ${escapeHtml(formatWeight(preview.crossWeight))} · 最终 ${escapeHtml(formatWeight(preview.adjustedScore))} · 个人乘积 ${escapeHtml(formatWeight(preview.personalWeight))}</span>
+      <span>交叉 ${escapeHtml(formatWeight(preview.crossWeight))} · 最终 ${escapeHtml(formatWeight(preview.adjustedScore))} · 个人调节 ${escapeHtml(formatWeight(preview.priorityWeight))}</span>
     </p>
     <button class="table-action" type="button" data-apply-best-match>填入第一张候选卡片</button>
   `;
@@ -870,7 +892,7 @@ async function previewMatch(card) {
       updateSelectOptions(rightSelect, preview.right.id, preview.left.id);
     }
     card.querySelector(".match-admin-head strong").textContent = `最终权重 ${formatWeight(preview.adjustedScore ?? preview.weightBreakdown?.finalWeight ?? preview.score)}`;
-    card.querySelector(".match-admin-head small").textContent = `交叉 ${formatWeight(preview.crossWeight ?? preview.score)} · 个人乘积 ${formatWeight(preview.personalWeight)} · 布尔 ${formatWeight(preview.booleanGate)} · 取向 ${formatWeight(preview.orientationWeight)}`;
+    card.querySelector(".match-admin-head small").textContent = `交叉 ${formatWeight(preview.crossWeight ?? preview.score)} · 个人调节 ${formatWeight(preview.priorityWeight)} · 布尔 ${formatWeight(preview.booleanGate)} · 取向 ${formatWeight(preview.orientationWeight)}`;
     if (diagnostics) diagnostics.outerHTML = renderMatchDiagnostics(preview);
   } catch (error) {
     if (diagnostics) diagnostics.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
@@ -921,7 +943,7 @@ function renderMatches() {
     <article class="admin-match" data-match-id="${match.id}">
       <div class="match-admin-head">
         <strong>最终权重 ${escapeHtml(formatWeight(match.adjustedScore ?? match.weightBreakdown?.finalWeight ?? match.score))}</strong>
-        <small>交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · 个人乘积 ${escapeHtml(formatWeight(match.personalWeight))} · 布尔 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))} · 取向 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</small>
+        <small>交叉 ${escapeHtml(formatWeight(match.crossWeight ?? match.score))} · 个人调节 ${escapeHtml(formatWeight(match.priorityWeight ?? match.weightBreakdown?.priorityWeight ?? 1))} · 布尔 ${escapeHtml(formatWeight(match.booleanGate ?? match.weightBreakdown?.booleanGate ?? 1))} · 取向 ${escapeHtml(formatWeight(match.orientationWeight ?? match.weightBreakdown?.orientationWeight ?? 1))}</small>
         ${match.generatedFor ? `<em>${escapeHtml(match.generatedFor)}</em>` : (match.batchId ? `<em>${escapeHtml(match.batchId)}</em>` : "")}
       </div>
       <label>${escapeHtml(profileRoleLabel(match.left))}
@@ -987,8 +1009,25 @@ async function saveSettings() {
     });
     state.settings = payload.settings;
     state.round = payload.round;
+    state.weightParameters = payload.weightParameters || state.weightParameters;
     renderSettings();
     message.textContent = "设置已保存。";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function updateWeightParameters() {
+  const message = $("[data-settings-message]");
+  message.textContent = "正在更新权重参数...";
+  try {
+    const payload = await api("/api/admin/weights/update", { method: "POST", body: JSON.stringify({}) });
+    state.weightParameters = payload.weightParameters || null;
+    state.matches = payload.matches || state.matches;
+    state.bestMatch = null;
+    renderSettings();
+    renderAdminView();
+    message.textContent = "权重参数已更新，候选匹配已按新参数重算。";
   } catch (error) {
     message.textContent = error.message;
   }
@@ -1029,6 +1068,7 @@ $("[data-seed-demo-users]").addEventListener("click", seedDemoUsers);
 $("[data-delete-demo-users]").addEventListener("click", deleteDemoUsers);
 $("[data-backup-data]").addEventListener("click", downloadDataBackup);
 $("[data-save-settings]").addEventListener("click", saveSettings);
+$("[data-update-weight-parameters]").addEventListener("click", updateWeightParameters);
 $("[data-save-announcement]").addEventListener("click", saveAnnouncement);
 $("[data-new-announcement]").addEventListener("click", resetAnnouncementForm);
 $("[data-community-qr-input]").addEventListener("change", handleCommunityFileChange);

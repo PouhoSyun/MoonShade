@@ -314,10 +314,12 @@ function renderDashboardSummary(stats = {}) {
   const participants = $("[data-participants-count]");
   const women = $("[data-women-count]");
   const men = $("[data-men-count]");
+  const matchedPeople = $("[data-matched-people-count]");
   const nextMatch = $("[data-summary-next-match]");
   if (participants) participants.textContent = String(Number(stats.participants) || 0);
   if (women) women.textContent = String(Number(stats.women) || 0);
   if (men) men.textContent = String(Number(stats.men) || 0);
+  if (matchedPeople) matchedPeople.textContent = String(Number(stats.matchedPeople) || 0);
   if (nextMatch) nextMatch.textContent = summaryNextMatchText(state.profile?.matchFrequency);
 }
 

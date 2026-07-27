@@ -43,7 +43,11 @@ const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
 const ALLOW_DEV_CODE = envBool(process.env.MOONSHADE_ALLOW_DEV_CODE, IS_DEVELOPMENT);
-const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v4-soft-gates";
+const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v5-cached-balance";
+const WEIGHT_PARAMETER_VERSION = "weight-params-v2";
+const PERSONAL_PRODUCT_EXPONENT = 0.35;
+const PERSONAL_PRODUCT_MIN = 0.55;
+const PERSONAL_PRODUCT_MAX = 1.8;
 const ALLOWED_SCHOOL_TYPES = ["北京大学", "中国人民大学"];
 const ALLOWED_EMAIL_MESSAGE = "仅支持 10 位数字 + @stu.pku.edu.cn、10 位数字 + @pku.edu.cn，或 10 位数字 + @ruc.edu.cn 邮箱。";
 const PKU_LOCATIONS = ["燕园", "马池口", "学院路", "大兴", "万柳", "西山口", "统军庄", "医院系统", "深圳", "牛津", "校外"];
@@ -162,6 +166,7 @@ const defaultData = {
   adminSessions: [],
   userSessions: [],
   matches: [],
+  weightParameters: null,
   settings: {
     matchIntervalDays: 3,
     matchWindowNote: "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。"
@@ -267,6 +272,7 @@ function normalizeData(data) {
     adminSessions: Array.isArray(data.adminSessions) ? data.adminSessions : [],
     userSessions: Array.isArray(data.userSessions) ? data.userSessions : [],
     matches: Array.isArray(data.matches) ? data.matches : [],
+    weightParameters: data.weightParameters && typeof data.weightParameters === "object" ? data.weightParameters : null,
     settings: {
       ...defaultData.settings,
       ...(data.settings && typeof data.settings === "object" ? data.settings : {})
@@ -892,27 +898,15 @@ const scarcitySingleFields = [
   "socialBoundary"
 ];
 
-function multiselectSpecificity(value, total) {
-  const list = asList(value);
-  if (!list.length || !total) return 0;
-  if (list.includes("不限") || list.includes("不设偏好")) return 0.08;
-  if (total <= 1) return 1;
-  return clampNumber(1 - (Math.min(list.length, total) - 1) / (total - 1), 0, 1);
-}
-
-function yearRangeSpecificity(profile) {
-  const min = Number.isInteger(profile.idealBirthYearMin) ? profile.idealBirthYearMin : 1990;
-  const max = Number.isInteger(profile.idealBirthYearMax) ? profile.idealBirthYearMax : 2010;
-  if (!Number.isInteger(profile.idealBirthYearMin) && !Number.isInteger(profile.idealBirthYearMax)) return 0;
-  const width = Math.max(1, Math.min(21, Math.abs(max - min) + 1));
-  return clampNumber(1 - (width - 1) / 20, 0, 1);
-}
-
 function rawPrecisionRatio(profile) {
   const scores = precisionMultiselectFields.map(({ key, total }) => {
-    return multiselectSpecificity(profile[key], total);
+    const list = asList(profile[key]);
+    const selectedCount = list.includes("不限") || list.includes("不设偏好")
+      ? total
+      : Math.min(list.length, total);
+    const overSelectRatio = clampNumber(Math.max(0.3, total ? selectedCount / total : 1), 0.3, 1);
+    return 1 - overSelectRatio;
   });
-  scores.push(yearRangeSpecificity(profile));
   const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
   return roundWeight(average);
 }
@@ -931,13 +925,30 @@ function genderRatioCoefficient(profile, profiles = []) {
   return roundWeight(clampNumber(compatible / same, 0.55, 1.8));
 }
 
-function rawScarcityRatio(profile, profiles = []) {
+function optionWeightMapForField(field, profiles = []) {
+  const answered = profiles.filter(item => item[field]);
+  const counts = new Map();
+  answered.forEach(item => counts.set(item[field], (counts.get(item[field]) || 0) + 1));
+  return Object.fromEntries([...counts.entries()].map(([value, count]) => [
+    value,
+    roundWeight(answered.length / count)
+  ]));
+}
+
+function scarcityOptionWeightsFor(profiles = []) {
+  return Object.fromEntries(scarcitySingleFields.map(field => [
+    field,
+    optionWeightMapForField(field, profiles)
+  ]));
+}
+
+function rawScarcityRatio(profile, profiles = [], optionWeights = null) {
+  const weights = optionWeights || scarcityOptionWeightsFor(profiles);
   const scores = scarcitySingleFields.map(field => {
     const value = profile[field];
-    const answered = profiles.filter(item => item[field]).length;
-    if (!value || !answered) return null;
-    const same = profiles.filter(item => item[field] === value).length;
-    return 1 - same / answered;
+    if (!value) return null;
+    const fieldWeights = weights[field] || {};
+    return Number(fieldWeights[value]) || 0;
   }).filter(value => value !== null);
   const average = scores.length ? scores.reduce((sum, item) => sum + item, 0) / scores.length : 0;
   return roundWeight(average);
@@ -968,10 +979,80 @@ function rankedCoefficient(rankRatio) {
   return roundWeight(0.7 + clampNumber(rankRatio, 0, 1) * 0.6);
 }
 
-function profileRankContext(profiles = []) {
-  const pool = profiles.filter(profile => profile?.id);
+function rankLookup(entries, ranks) {
+  const sorted = [...entries].sort((a, b) => {
+    const leftRank = ranks.get(a.id) ?? 0.5;
+    const rightRank = ranks.get(b.id) ?? 0.5;
+    return leftRank - rightRank || a.value - b.value;
+  });
+  if (!sorted.length) return [];
+  return Array.from({ length: 11 }, (_, index) => {
+    const percentile = index / 10;
+    const item = sorted[Math.min(sorted.length - 1, Math.round(percentile * (sorted.length - 1)))];
+    const rankRatio = ranks.get(item.id) ?? 0.5;
+    return {
+      percentile: roundWeight(percentile, 2),
+      rawRatio: item.value,
+      coefficient: rankedCoefficient(rankRatio)
+    };
+  });
+}
+
+function buildWeightParameters(profiles = [], now = Date.now()) {
+  const pool = profiles.filter(profile => profile?.id && isActiveProfile(profile));
+  const scarcityOptionWeights = scarcityOptionWeightsFor(pool);
   const precisionEntries = pool.map(profile => ({ id: profile.id, value: rawPrecisionRatio(profile) }));
-  const scarcityEntries = pool.map(profile => ({ id: profile.id, value: rawScarcityRatio(profile, pool) }));
+  const scarcityEntries = pool.map(profile => ({ id: profile.id, value: rawScarcityRatio(profile, pool, scarcityOptionWeights) }));
+  const precisionRanks = rankedRatios(precisionEntries);
+  const scarcityRanks = rankedRatios(scarcityEntries);
+  const profilesById = Object.fromEntries(pool.map(profile => {
+    const precisionRaw = precisionEntries.find(item => item.id === profile.id)?.value ?? 0;
+    const scarcityRaw = scarcityEntries.find(item => item.id === profile.id)?.value ?? 0;
+    const precisionRank = precisionRanks.get(profile.id) ?? 0.5;
+    const scarcityRank = scarcityRanks.get(profile.id) ?? 0.5;
+    return [profile.id, {
+      precisionRawRatio: precisionRaw,
+      precisionRankRatio: precisionRank,
+      precisionCoefficient: rankedCoefficient(precisionRank),
+      scarcityRawRatio: scarcityRaw,
+      scarcityRankRatio: scarcityRank,
+      scarcityCoefficient: rankedCoefficient(scarcityRank)
+    }];
+  }));
+  return {
+    version: WEIGHT_PARAMETER_VERSION,
+    generatedAt: new Date(now).toISOString(),
+    profileCount: pool.length,
+    scarcityFields: scarcitySingleFields,
+    precisionFields: precisionMultiselectFields.map(item => ({ key: item.key, total: item.total })),
+    scarcityOptionWeights,
+    lookup: {
+      precision: rankLookup(precisionEntries, precisionRanks),
+      scarcity: rankLookup(scarcityEntries, scarcityRanks)
+    },
+    profiles: profilesById
+  };
+}
+
+function profileRankContext(profiles = [], weightParameters = null) {
+  if (weightParameters?.version === WEIGHT_PARAMETER_VERSION && weightParameters.profiles) {
+    return {
+      precision: new Map(Object.entries(weightParameters.profiles).map(([id, item]) => [id, {
+        rawRatio: Number(item.precisionRawRatio) || 0,
+        rankRatio: Number(item.precisionRankRatio) || 0,
+        coefficient: Number(item.precisionCoefficient) || 1
+      }])),
+      scarcity: new Map(Object.entries(weightParameters.profiles).map(([id, item]) => [id, {
+        rawRatio: Number(item.scarcityRawRatio) || 0,
+        rankRatio: Number(item.scarcityRankRatio) || 0,
+        coefficient: Number(item.scarcityCoefficient) || 1
+      }]))
+    };
+  }
+  const pool = profiles.filter(profile => profile?.id);
+  const scarcityOptionWeights = scarcityOptionWeightsFor(pool);
+  const precisionEntries = pool.map(profile => ({ id: profile.id, value: rawPrecisionRatio(profile) }));
+  const scarcityEntries = pool.map(profile => ({ id: profile.id, value: rawScarcityRatio(profile, pool, scarcityOptionWeights) }));
   const precisionRanks = rankedRatios(precisionEntries);
   const scarcityRanks = rankedRatios(scarcityEntries);
   return {
@@ -1516,10 +1597,10 @@ function genderRanksFor(profiles, history, settings, now = Date.now(), rankConte
   return ranks;
 }
 
-function frequencyMapFor(profiles, matches, settings) {
+function frequencyMapFor(profiles, matches, settings, weightParameters = null) {
   const history = matchHistory(matches);
   const now = Date.now();
-  const rankContext = profileRankContext(profiles);
+  const rankContext = profileRankContext(profiles, weightParameters);
   const ranks = genderRanksFor(profiles, history, settings, now, rankContext);
   return new Map(profiles.map(profile => [profile.id, profileFrequency(profile, profiles, history, settings, now, ranks, rankContext)]));
 }
@@ -1565,28 +1646,19 @@ function sharedInterestCount(a, b) {
   }, 0);
 }
 
-function textTokens(value) {
-  return cleanText(value, 300)
-    .split(/[\s,，、;；.。!！?？/]+/)
-    .map(item => item.trim())
-    .filter(item => item.length >= 2);
-}
-
-function freeTextInterestHits(a, b) {
-  const left = new Set(textTokens(a.otherInterestText));
-  return textTokens(b.otherInterestText).filter(item => left.has(item)).length;
-}
-
 function orientationWeightForPair(a, b) {
   const interestMatches = sharedInterestCount(a, b);
   const interestBonus = Math.floor(Math.max(0, interestMatches - 7) / 2) * 0.1;
-  const freeTextHits = freeTextInterestHits(a, b);
-  const freeTextBonus = freeTextHits * 0.07;
   return {
-    orientationWeight: roundWeight(1 + interestBonus + freeTextBonus),
+    orientationWeight: roundWeight(1 + interestBonus),
     interestMatches,
-    freeTextHits
+    freeTextHits: 0
   };
+}
+
+function pairPriorityWeight(personalWeightProduct) {
+  const compressed = Number(personalWeightProduct) > 0 ? Number(personalWeightProduct) ** PERSONAL_PRODUCT_EXPONENT : 0;
+  return roundWeight(clampNumber(compressed, PERSONAL_PRODUCT_MIN, PERSONAL_PRODUCT_MAX));
 }
 
 function scorePair(a, b) {
@@ -1596,8 +1668,7 @@ function scorePair(a, b) {
   const basis = roundWeight(gate.booleanGate * orientation.orientationWeight);
   const reasons = [
     gate.hardBlocked ? "布尔门槛为 0，存在硬性不符合项" : (gate.softViolationCount ? `存在 ${gate.softViolationCount} 项软性违例` : "布尔门槛完全通过"),
-    orientation.interestMatches >= 7 ? `共同兴趣 ${orientation.interestMatches} 项` : `共同兴趣 ${orientation.interestMatches} 项，未达到加权门槛`,
-    orientation.freeTextHits ? `未涉及爱好命中 ${orientation.freeTextHits} 项` : ""
+    orientation.interestMatches >= 7 ? `共同兴趣 ${orientation.interestMatches} 项` : `共同兴趣 ${orientation.interestMatches} 项，未达到加权门槛`
   ].filter(Boolean);
 
   return {
@@ -1646,11 +1717,11 @@ function selectedCandidateMatches(candidates, targetCount = 6) {
   return selected.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
 }
 
-function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings) {
+function generateRoundMatches(profiles, roundId, matches = [], settings = defaultData.settings, weightParameters = null) {
   const history = matchHistory(matches);
   const historicalPairs = historicalPairKeys(matches);
   const activeProfiles = profiles.filter(isActiveProfile);
-  const frequencies = frequencyMapFor(activeProfiles, matches, settings);
+  const frequencies = frequencyMapFor(activeProfiles, matches, settings, weightParameters);
   const publishedParticipantIds = new Set(matches
     .filter(match => match.roundId === roundId && match.status === "published")
     .flatMap(match => [match.leftId, match.rightId]));
@@ -1679,10 +1750,11 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       const leftFrequency = frequencies.get(left.id) || { personalWeight: 0 };
       const rightFrequency = frequencies.get(right.id) || { personalWeight: 0 };
       const personalWeight = roundWeight((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
-      const crossWeight = roundWeight(personalWeight * scored.booleanGate * scored.orientationWeight);
+      const priorityWeight = pairPriorityWeight(personalWeight);
+      const crossWeight = roundWeight(priorityWeight * scored.booleanGate * scored.orientationWeight);
       const repeatFactor = pairRepeatFactor(repeatedCount);
       const adjustedScore = roundWeight(crossWeight * repeatFactor);
-      candidates.push({ left, right, adjustedScore, personalWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
+      candidates.push({ left, right, adjustedScore, personalWeight, priorityWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
     }
   }
   candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
@@ -1702,6 +1774,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       adjustedScore: best.adjustedScore,
       crossWeight: best.crossWeight,
       personalWeight: best.personalWeight,
+      priorityWeight: best.priorityWeight,
       booleanGate: best.booleanGate,
       orientationWeight: best.orientationWeight,
       interestMatchCount: best.interestMatchCount,
@@ -1728,6 +1801,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
           genderRank: rightFrequency?.genderRank || null
         },
         crossWeight: best.crossWeight,
+        priorityWeight: best.priorityWeight,
         booleanGate: best.booleanGate,
         orientationWeight: best.orientationWeight,
         repeatFactor: best.repeatFactor,
@@ -1736,6 +1810,7 @@ function generateRoundMatches(profiles, roundId, matches = [], settings = defaul
       reasons: [
         ...best.reasons,
         `个人权重乘积 ${best.personalWeight}`,
+        `个人调节系数 ${best.priorityWeight}`,
         `布尔门槛 ${best.booleanGate}`,
         `取向权重 ${best.orientationWeight}`,
         `交叉权重 ${best.crossWeight}`,
@@ -1786,7 +1861,7 @@ function ensureDailyDraftMatches(data) {
   const publishedIds = new Set(data.matches
     .filter(match => match.roundId === roundId && match.status === "published")
     .flatMap(match => [match.leftId, match.rightId]));
-  const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
+  const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
   const coolingIds = new Set([...frequencyMap.entries()]
     .filter(([, frequency]) => (frequency.gapCoefficient || 0) <= 0)
     .map(([id]) => id));
@@ -1814,25 +1889,26 @@ function ensureDailyDraftMatches(data) {
 }
 
 function replaceRoundDraftMatches(data, roundId) {
-  const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings);
+  const generated = generateRoundMatches(data.profiles, roundId, data.matches, data.settings, data.weightParameters);
   data.matches = data.matches
     .filter(match => !(match.roundId === roundId && match.status === "draft"))
     .concat(generated);
   return generated;
 }
 
-function matchPreview(left, right, matches, settings, profiles = [left, right]) {
+function matchPreview(left, right, matches, settings, profiles = [left, right], weightParameters = null) {
   if (!left || !right) return null;
   [left, right] = displayOrderedProfilePair(left, right);
   const frequencyPool = profiles.filter(profile => isActiveProfile(profile));
-  const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings);
+  const frequencies = frequencyMapFor(frequencyPool.length ? frequencyPool : [left, right], matches, settings, weightParameters);
   const leftFrequency = frequencies.get(left.id);
   const rightFrequency = frequencies.get(right.id);
   const boundaryWarnings = matchBoundaryWarnings(left, right);
   const scored = scorePair(left, right);
   const hardBlocked = scored?.hardBlocked || false;
   const personalWeight = roundWeight((leftFrequency?.personalWeight || 0) * (rightFrequency?.personalWeight || 0));
-  const crossWeight = roundWeight(personalWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
+  const priorityWeight = pairPriorityWeight(personalWeight);
+  const crossWeight = roundWeight(priorityWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
   const key = pairKey(left.id, right.id);
   const history = matchHistory(matches);
   const repeatedCount = history.pairCounts.get(key) || 0;
@@ -1844,6 +1920,7 @@ function matchPreview(left, right, matches, settings, profiles = [left, right]) 
     score: crossWeight,
     crossWeight,
     personalWeight,
+    priorityWeight,
     adjustedScore: finalWeight,
     booleanGate: scored?.booleanGate || 0,
     orientationWeight: scored?.orientationWeight || 0,
@@ -1872,6 +1949,7 @@ function matchPreview(left, right, matches, settings, profiles = [left, right]) 
         genderRank: rightFrequency?.genderRank || null
       },
       crossWeight,
+      priorityWeight,
       booleanGate: scored?.booleanGate || 0,
       orientationWeight: scored?.orientationWeight || 0,
       repeatFactor,
@@ -1882,13 +1960,13 @@ function matchPreview(left, right, matches, settings, profiles = [left, right]) 
   };
 }
 
-function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultData.settings) {
+function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultData.settings, weightParameters = null) {
   if (!profile || !isActiveProfile(profile)) return null;
   const activeProfiles = profiles.filter(item => isActiveProfile(item));
   const historyMatches = matches.filter(item => item.status === "published");
   return activeProfiles
     .filter(candidate => candidate.id !== profile.id)
-    .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles))
+    .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles, weightParameters))
     .filter(Boolean)
     .filter(preview => !preview.hardBlocked)
     .filter(preview => (preview.weightBreakdown?.repeatFactor ?? 1) > 0)
@@ -2079,9 +2157,9 @@ function adminMatchProfile(profile, context = {}) {
   return adminProfile(profile, context);
 }
 
-function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches) {
+function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches, weightParameters = null) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
-  const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings);
+  const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings, weightParameters);
   const publishedPairs = historicalPairKeys(historyMatches);
   const seenDraftPairs = new Set();
   return [...matches].sort((a, b) => {
@@ -2100,7 +2178,7 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
     const rightProfile = byId.get(match.rightId);
     const historyForPreview = historyMatches.filter(item => item.status === "published" && item.id !== match.id);
     const preview = leftProfile && rightProfile
-      ? matchPreview(leftProfile, rightProfile, historyForPreview, settings, profiles)
+      ? matchPreview(leftProfile, rightProfile, historyForPreview, settings, profiles, weightParameters)
       : null;
     return {
       ...match,
@@ -2111,6 +2189,7 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
         adjustedScore: preview.adjustedScore,
         crossWeight: preview.crossWeight,
         personalWeight: preview.personalWeight,
+        priorityWeight: preview.priorityWeight,
         booleanGate: preview.booleanGate,
         orientationWeight: preview.orientationWeight,
         interestMatchCount: preview.interestMatchCount,
@@ -2120,6 +2199,7 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
         reasons: [
           ...(preview.reasons || []),
           `个人权重乘积 ${preview.personalWeight}`,
+          `个人调节系数 ${preview.priorityWeight}`,
           `布尔门槛 ${preview.booleanGate}`,
           `取向权重 ${preview.orientationWeight}`,
           `交叉权重 ${preview.crossWeight}`,
@@ -2376,21 +2456,30 @@ async function handleApi(req, res, url) {
       return sendJsonDownload(res, data, `moonshade-backup-${timestamp}.json`);
     }
     if (req.method === "GET" && url.pathname === "/api/admin/profiles") {
-      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings, data.weightParameters);
       return sendJson(res, 200, { profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })), users: data.users });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/matches") {
       const changed = ensureDailyDraftMatches(data);
       if (changed) await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { matches: serializeAdminMatches(data.matches, data.profiles, data.settings), profiles: data.profiles.map(publicProfile) });
+      return sendJson(res, 200, { matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters), profiles: data.profiles.map(publicProfile) });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/settings") {
-      return sendJson(res, 200, { settings: cleanSettings(data.settings), round: currentRound(new Date(), data.settings) });
+      return sendJson(res, 200, { settings: cleanSettings(data.settings), round: currentRound(new Date(), data.settings), weightParameters: data.weightParameters || null });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/settings") {
       data.settings = cleanSettings(adminBody.settings || adminBody);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { settings: data.settings, round: currentRound(new Date(), data.settings) });
+      return sendJson(res, 200, { settings: data.settings, round: currentRound(new Date(), data.settings), weightParameters: data.weightParameters || null });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/weights/update") {
+      data.weightParameters = buildWeightParameters(data.profiles);
+      replaceRoundDraftMatches(data, currentRound(new Date(), data.settings).id);
+      await writeJson(DATA_FILE, data);
+      return sendJson(res, 200, {
+        weightParameters: data.weightParameters,
+        matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters)
+      });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/announcements") {
       return sendJson(res, 200, { announcements: data.announcements || [] });
@@ -2433,7 +2522,7 @@ async function handleApi(req, res, url) {
       const roundId = currentRound(new Date(), data.settings).id;
       const generated = replaceRoundDraftMatches(data, roundId);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { matches: serializeAdminMatches(generated, data.profiles, data.settings, data.matches) });
+      return sendJson(res, 200, { matches: serializeAdminMatches(generated, data.profiles, data.settings, data.matches, data.weightParameters) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/publish") {
       const roundId = currentRound(new Date(), data.settings).id;
@@ -2455,7 +2544,7 @@ async function handleApi(req, res, url) {
       });
       if (published > 0) replaceRoundDraftMatches(data, roundId);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { published, matches: serializeAdminMatches(data.matches, data.profiles, data.settings) });
+      return sendJson(res, 200, { published, matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/preview") {
       const left = data.profiles.find(item => item.id === cleanText(adminBody.leftId, 80));
@@ -2463,13 +2552,13 @@ async function handleApi(req, res, url) {
       if (!left || !right) return sendJson(res, 404, { error: "候选用户不存在。" });
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能进入候选。" });
       if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
-      return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles) });
+      return sendJson(res, 200, { preview: matchPreview(left, right, data.matches.filter(item => item.status === "published"), data.settings, data.profiles, data.weightParameters) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/best-for") {
       const profile = data.profiles.find(item => item.id === cleanText(adminBody.profileId, 80));
       if (!profile) return sendJson(res, 404, { error: "用户不存在。" });
       if (!isActiveProfile(profile)) return sendJson(res, 400, { error: "该用户暂停匹配或未授权参与匹配。" });
-      const preview = bestCrossWeightMatchFor(profile, data.profiles, data.matches, data.settings);
+      const preview = bestCrossWeightMatchFor(profile, data.profiles, data.matches, data.settings, data.weightParameters);
       if (!preview) return sendJson(res, 404, { error: "暂时没有可计算的匹配对象。" });
       return sendJson(res, 200, {
         target: preview.left,
@@ -2482,18 +2571,18 @@ async function handleApi(req, res, url) {
       const before = data.matches.length;
       data.matches = data.matches.filter(item => item.id !== matchId);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { deleted: before - data.matches.length, matches: serializeAdminMatches(data.matches, data.profiles, data.settings) });
+      return sendJson(res, 200, { deleted: before - data.matches.length, matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users") {
       const result = seedDemoProfiles(data);
       await writeJson(DATA_FILE, data);
-      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings, data.weightParameters);
       return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/demo-users/delete") {
       const result = deleteDemoProfiles(data);
       await writeJson(DATA_FILE, data);
-      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings);
+      const frequencyMap = frequencyMapFor(data.profiles.filter(isActiveProfile), data.matches, data.settings, data.weightParameters);
       return sendJson(res, 200, { ...result, profiles: data.profiles.map(profile => adminProfile(profile, { frequencyMap })) });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/update") {
@@ -2525,13 +2614,14 @@ async function handleApi(req, res, url) {
         );
       }
       const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
-      const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles) : null;
+      const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters) : null;
       if (preview) {
         match.score = preview.score;
         delete match.rawScore;
         delete match.maxScore;
         match.crossWeight = preview.crossWeight;
         match.personalWeight = preview.personalWeight;
+        match.priorityWeight = preview.priorityWeight;
         match.adjustedScore = preview.adjustedScore;
         match.weightBreakdown = preview.weightBreakdown;
         match.reasons = preview.reasons;
@@ -2559,7 +2649,7 @@ async function handleApi(req, res, url) {
         replaceRoundDraftMatches(data, match.roundId || currentRound(new Date(), data.settings).id);
       }
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings, data.matches)[0] });
+      return sendJson(res, 200, { match: serializeAdminMatches([match], data.profiles, data.settings, data.matches, data.weightParameters)[0] });
     }
   }
 
@@ -2589,7 +2679,7 @@ async function handleApi(req, res, url) {
       ? data.profiles.find(item => item.email === authUser.email)
       : data.profiles.find(item => item.token === token);
     const activeProfiles = data.profiles.filter(isActiveProfile);
-    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
     return sendJson(res, 200, {
       profile: profile ? {
         ...profile,
@@ -2638,7 +2728,7 @@ async function handleApi(req, res, url) {
     replaceRoundDraftMatches(data, roundId);
     await writeJson(DATA_FILE, data);
     const activeProfiles = data.profiles.filter(isActiveProfile);
-    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
     return sendJson(res, 200, {
       profile: publicProfile(profile, { frequencyMap })
     });
@@ -2652,7 +2742,7 @@ async function handleApi(req, res, url) {
       : data.profiles.find(item => item.token === token);
     if (!profile) return sendJson(res, 404, { error: "还没有找到你的问卷，请先提交。" });
     const activeProfiles = data.profiles.filter(isActiveProfile);
-    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings);
+    const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
     const matches = publishedMatchesFor(profile, data.profiles.filter(item => item.consent), data.matches);
     return sendJson(res, 200, { profile: publicProfile(profile, { frequencyMap }), matches });
   }

@@ -65,7 +65,11 @@
               <label>状态页说明
                 <textarea data-match-note-input rows="3"></textarea>
               </label>
-              <button class="secondary-action" data-save-settings>保存设置</button>
+              <div class="admin-inline-actions">
+                <button class="secondary-action" data-save-settings>保存设置</button>
+                <button class="secondary-action" type="button" data-update-weight-parameters>更新权重参数</button>
+              </div>
+              <p class="form-message" data-weight-parameters-summary>权重参数尚未加载。</p>
               <p class="form-message" data-settings-message></p>
             </section>
 
