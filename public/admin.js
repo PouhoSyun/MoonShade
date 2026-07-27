@@ -980,7 +980,13 @@ function renderPublishedMatches() {
 }
 
 async function publishMatches() {
-  await api("/api/admin/matches/publish", { method: "POST", body: JSON.stringify({}) });
+  const countInput = $("[data-publish-count]");
+  const count = Math.max(1, Math.min(20, Number.parseInt(countInput?.value || "1", 10) || 1));
+  const payload = await api("/api/admin/matches/publish", {
+    method: "POST",
+    body: JSON.stringify({ count })
+  });
+  appendAdminLog(`自动发布 ${payload.published || 0} / ${payload.requested || count} 条每日匹配。`);
   await loadAdmin();
 }
 

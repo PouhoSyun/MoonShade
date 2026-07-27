@@ -1892,6 +1892,47 @@ function replaceRoundDraftMatches(data, roundId) {
   return generated;
 }
 
+function publishBestDraftMatch(data, roundId) {
+  dedupeRoundDraftMatches(data, roundId);
+  const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
+  const candidates = data.matches
+    .filter(match => match.roundId === roundId && match.status === "draft")
+    .sort((a, b) => (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0));
+  for (const match of candidates) {
+    const left = byId.get(match.leftId);
+    const right = byId.get(match.rightId);
+    if (!isActiveProfile(left) || !isActiveProfile(right) || !hardBoundaryCompatible(left, right)) continue;
+    const publishedPairKeys = historicalPairKeys(data.matches.filter(item => item.id !== match.id));
+    if (publishedPairKeys.has(pairKey(match.leftId, match.rightId))) continue;
+    const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
+    const preview = matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters);
+    if (!preview || preview.hardBlocked || (preview.weightBreakdown?.repeatFactor ?? 1) <= 0 || (preview.adjustedScore || 0) <= 0) continue;
+    match.leftId = preview.left?.id || match.leftId;
+    match.rightId = preview.right?.id || match.rightId;
+    match.score = preview.score;
+    delete match.rawScore;
+    delete match.maxScore;
+    match.crossWeight = preview.crossWeight;
+    match.personalWeight = preview.personalWeight;
+    match.priorityWeight = preview.priorityWeight;
+    match.adjustedScore = preview.adjustedScore;
+    match.weightBreakdown = preview.weightBreakdown;
+    match.reasons = preview.reasons;
+    match.boundaryWarnings = preview.boundaryWarnings;
+    match.booleanGate = preview.booleanGate;
+    match.orientationWeight = preview.orientationWeight;
+    match.interestMatchCount = preview.interestMatchCount;
+    match.freeTextInterestHits = preview.freeTextInterestHits;
+    match.softViolationCount = preview.softViolationCount;
+    match.hardBlocked = preview.hardBlocked;
+    match.status = "published";
+    match.publishedAt = new Date().toISOString();
+    match.updatedAt = new Date().toISOString();
+    return match;
+  }
+  return null;
+}
+
 function matchPreview(left, right, matches, settings, profiles = [left, right], weightParameters = null) {
   if (!left || !right) return null;
   [left, right] = displayOrderedProfilePair(left, right);
@@ -2522,25 +2563,25 @@ async function handleApi(req, res, url) {
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/publish") {
       const roundId = currentRound(new Date(), data.settings).id;
-      dedupeRoundDraftMatches(data, roundId);
-      const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
-      const publishedPairs = historicalPairKeys(data.matches);
+      const requestedCount = Number.parseInt(adminBody.count, 10);
+      const targetCount = clampNumber(Number.isInteger(requestedCount) ? requestedCount : 1, 1, 20);
       let published = 0;
-      data.matches.forEach(match => {
-        if (match.roundId === roundId && match.status === "draft") {
-          const left = byId.get(match.leftId);
-          const right = byId.get(match.rightId);
-          if (!isActiveProfile(left) || !isActiveProfile(right) || !hardBoundaryCompatible(left, right)) return;
-          if (publishedPairs.has(pairKey(match.leftId, match.rightId))) return;
-          match.status = "published";
-          match.publishedAt = new Date().toISOString();
-          match.updatedAt = new Date().toISOString();
-          published += 1;
-        }
-      });
-      if (published > 0) replaceRoundDraftMatches(data, roundId);
+      const publishedIds = [];
+      for (let index = 0; index < targetCount; index += 1) {
+        replaceRoundDraftMatches(data, roundId);
+        const match = publishBestDraftMatch(data, roundId);
+        if (!match) break;
+        published += 1;
+        publishedIds.push(match.id);
+      }
+      replaceRoundDraftMatches(data, roundId);
       await writeJson(DATA_FILE, data);
-      return sendJson(res, 200, { published, matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters) });
+      return sendJson(res, 200, {
+        requested: targetCount,
+        published,
+        publishedIds,
+        matches: serializeAdminMatches(data.matches, data.profiles, data.settings, data.matches, data.weightParameters)
+      });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/matches/preview") {
       const left = data.profiles.find(item => item.id === cleanText(adminBody.leftId, 80));

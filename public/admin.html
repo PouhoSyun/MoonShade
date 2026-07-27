@@ -43,7 +43,11 @@
             <button class="secondary-action" data-admin-view="dashboard">候选工作台</button>
             <button class="secondary-action" data-admin-view="published">已发布匹配</button>
             <button class="secondary-action" type="button" data-admin-logout>退出登录</button>
-            <button class="primary-action publish-action" data-publish-matches>发布已审核匹配</button>
+            <label class="publish-count-control">
+              <span>发布数量</span>
+              <input data-publish-count type="number" min="1" max="20" step="1" value="1" inputmode="numeric" />
+            </label>
+            <button class="primary-action publish-action" data-publish-matches>自动发布每日匹配</button>
           </div>
         </header>
 
