@@ -140,7 +140,7 @@ const state = {
   sliderVerified: false,
   authMode: "email",
   profile: null,
-  round: null,
+  day: null,
   community: {},
   pageIndex: 0,
   selected: {},
@@ -309,7 +309,7 @@ function summaryNextMatchText(frequency) {
   if (frequency?.eligible) return "已到可分配";
   if (frequency?.expectedNextAllocationAt) return formatDateOnly(frequency.expectedNextAllocationAt);
   if (hasAuthToken()) return "提交后生成";
-  return formatDateOnly(state.round?.closesAt || new Date());
+  return formatDateOnly(state.day?.resultsAt || new Date());
 }
 
 function renderDashboardSummary(stats = {}) {
@@ -329,7 +329,6 @@ function renderPersonalSchedule() {
   const el = $("[data-countdown]");
   const frequency = state.profile?.matchFrequency;
   const paused = state.profile?.matchPaused === true;
-  const interval = frequency?.intervalDays || state.round?.intervalDays || state.round?.settings?.matchIntervalDays || 3;
   const statusPanel = $("[data-profile-status-panel]");
   if (statusPanel) statusPanel.classList.toggle("is-match-paused", paused);
   const dashboardTitle = $("[data-dashboard-title]");
@@ -344,10 +343,10 @@ function renderPersonalSchedule() {
     } else if (hasAuthToken()) {
       el.innerHTML = `<span><strong>待生成</strong><small>提交问卷后</small></span>`;
     } else {
-      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(state.round?.closesAt || new Date()))}</strong></span>`;
+      el.innerHTML = `<span><strong>${escapeHtml(formatDateOnly(state.day?.resultsAt || new Date()))}</strong></span>`;
     }
   }
-  const note = $("[data-round-note]");
+  const note = $("[data-day-note]");
   if (note) {
     note.textContent = paused
       ? pausedHomeMessage
@@ -367,15 +366,15 @@ function renderPersonalSchedule() {
   if (matchNote) {
     matchNote.textContent = paused
       ? pausedStatusMessage
-      : (state.round?.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。");
+      : (state.day?.note || "每天都会安排匹配；实际分配会受个人预计窗口、画像分布、性别比例与偏好宽窄影响。");
   }
   const matchFrequency = $("[data-match-frequency]");
   if (matchFrequency) {
     matchFrequency.textContent = paused
       ? "已暂停匹配"
       : frequency
-      ? `参考间隔 ${frequency.intervalDays} 天`
-      : `参考间隔 ${interval} 天`;
+      ? `个人参考间隔 ${frequency.intervalDays} 天`
+      : "每日安排匹配";
   }
   const nextMatch = $("[data-summary-next-match]");
   if (nextMatch) nextMatch.textContent = summaryNextMatchText(frequency);
@@ -437,25 +436,22 @@ function bindNavigation() {
   });
 }
 
-function renderRound(payload) {
-  state.round = payload.round;
+function renderDay(payload) {
+  state.day = payload.day;
   state.community = payload.community || {};
-  const interval = payload.settings?.matchIntervalDays || payload.round.intervalDays || 3;
-  const note = payload.settings?.matchWindowNote || payload.round.note || "原则上每三天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。";
-  $("[data-round-note]").textContent = `原则上每 ${interval} 天匹配一次，具体会随画像分布浮动`;
+  const note = payload.settings?.matchWindowNote || payload.day?.note || "每天都会安排匹配；实际分配会受个人预计窗口、画像分布、性别比例与偏好宽窄影响。";
+  $("[data-day-note]").textContent = note;
   const matchedPeople = Number(payload.stats?.matchedPeople) || 0;
   const matchedPeopleTarget = $("[data-matched-people]");
   if (matchedPeopleTarget) matchedPeopleTarget.textContent = `已匹配 ${matchedPeople} 人次`;
-  const roundId = $("[data-round-id]");
-  if (roundId) roundId.textContent = formatDateOnly(new Date());
   const participants = $("[data-participants]");
   if (participants) participants.textContent = `${payload.stats.participants} 人参与 · 女生 ${payload.stats.women} · 男生 ${payload.stats.men}`;
   renderDashboardSummary(payload.stats);
   $("[data-dashboard-title]").textContent = `${formatDateOnly(new Date())} 画像池更新中`;
-  $("[data-close-time]").textContent = `个人下次分配参考：${formatDateOnly(payload.round.closesAt)}`;
+  $("[data-close-time]").textContent = "个人下次分配参考：提交问卷后生成";
   $("[data-result-time]").textContent = profileMetricLine(state.profile?.matchFrequency);
   const frequency = $("[data-match-frequency]");
-  if (frequency) frequency.textContent = `原则上每 ${interval} 天一次`;
+  if (frequency) frequency.textContent = "每日安排匹配";
   const matchNote = $("[data-match-note]");
   if (matchNote) matchNote.textContent = note;
   const balanceNote = $("[data-balance-note]");
@@ -975,7 +971,7 @@ function renderSubmitState() {
   const requiredVolumes = requiredVolumeNumbers(surveySnapshot());
   target.textContent = requiredVolumes.length
     ? `需更新第 ${requiredVolumes.join("、")} 卷`
-    : "本轮问卷已提交";
+    : "问卷已提交";
 }
 
 function cleanProfileFieldValue(key, value) {
@@ -1048,7 +1044,7 @@ function bindForm() {
       localStorage.setItem(tokenKey, state.token);
       fillForm(payload.profile);
       message.textContent = "已提交。你可以继续修改，也可以去结果页查看当前匹配。";
-      await loadRound();
+      await loadDay();
       await loadMe();
     } catch (error) {
       message.textContent = error.message;
@@ -1354,8 +1350,8 @@ function bindAuthReset() {
   });
 }
 
-async function loadRound() {
-  renderRound(await api("/api/round"));
+async function loadDay() {
+  renderDay(await api("/api/day"));
 }
 
 async function loadAuth() {
@@ -1398,7 +1394,7 @@ async function loadMatches() {
       ? await api("/api/matches", { auth: true })
       : await api(`/api/matches?token=${encodeURIComponent(state.token)}`);
     if (!payload.matches.length) {
-      list.innerHTML = `<div class="empty-state results-empty">管理员还没有发布本轮匹配。生成后的匹配表会先进入后台审核，发布后才会在这里显示。</div>`;
+      list.innerHTML = `<div class="empty-state results-empty">管理员还没有发布匹配。生成后的匹配表会先进入后台审核，发布后才会在这里显示。</div>`;
       return;
     }
     list.innerHTML = payload.matches.map(item => renderMatch(item, payload.profile)).join("");
@@ -1449,7 +1445,7 @@ async function init() {
   bindResults();
   renderSurveyPage();
   navigate(routeFromHash());
-  await loadRound();
+  await loadDay();
   await loadAuth();
   await loadMe();
   renderSurveyPage();

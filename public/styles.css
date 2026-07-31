@@ -192,8 +192,8 @@ h1 {
   text-align: center;
 }
 
-.round-label,
-.round-note {
+.day-label,
+.day-note {
   margin: 0;
   color: var(--muted);
 }
@@ -279,7 +279,7 @@ h1 {
   justify-content: center;
 }
 
-.round-list,
+.day-list,
 .survey-sidebar {
   position: sticky;
   top: 96px;
@@ -287,7 +287,7 @@ h1 {
   flex: 0 0 260px;
 }
 
-.round-card {
+.day-card {
   display: grid;
   gap: 4px;
   min-height: 92px;
@@ -298,23 +298,23 @@ h1 {
   background: linear-gradient(135deg, rgba(255, 250, 226, 0.84), rgba(235, 242, 239, 0.72));
 }
 
-.round-card.is-current {
+.day-card.is-current {
   border-color: rgba(177, 145, 71, 0.34);
   background: linear-gradient(135deg, rgba(255, 246, 204, 0.92), rgba(233, 242, 237, 0.86));
   box-shadow: inset 6px 0 0 #d3b45e, 0 16px 34px rgba(45, 55, 67, 0.06);
 }
 
-.round-card strong {
+.day-card strong {
   font-size: 17px;
 }
 
-.round-card span,
-.round-card em {
+.day-card span,
+.day-card em {
   color: var(--muted);
   font-style: normal;
 }
 
-.round-card em {
+.day-card em {
   color: var(--rose);
 }
 
@@ -944,7 +944,7 @@ textarea:focus {
     display: block;
   }
 
-  .round-list,
+  .day-list,
   .survey-sidebar {
     position: static;
     width: auto;
@@ -2263,8 +2263,8 @@ textarea:focus {
   backdrop-filter: blur(10px);
 }
 
-.hero-countdown .round-label,
-.hero-countdown .round-note,
+.hero-countdown .day-label,
+.hero-countdown .day-note,
 .hero-countdown .countdown small {
   color: rgba(255, 248, 220, 0.72);
 }
@@ -2455,7 +2455,7 @@ body {
   z-index: 1;
 }
 
-.round-card,
+.day-card,
 .survey-sidebar,
 .panel,
 .admin-login,
@@ -2467,7 +2467,7 @@ body {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
 }
 
-.round-card.is-current,
+.day-card.is-current,
 .status-panel,
 .result-intro,
 .admin-stat-panel {
@@ -2652,7 +2652,7 @@ textarea,
 }
 
 .panel,
-.round-card,
+.day-card,
 .admin-login,
 .admin-match,
 .contact-page {
@@ -2666,7 +2666,7 @@ textarea,
     0 22px 64px rgba(0, 0, 0, 0.2);
 }
 
-.round-card {
+.day-card {
   padding: 18px 20px;
 }
 

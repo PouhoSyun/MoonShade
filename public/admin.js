@@ -11,7 +11,7 @@ const state = {
   weightParameters: null,
   communityQrDraft: "",
   settings: null,
-  round: null,
+  day: null,
   selectedProfileId: "",
   bestMatch: null,
   view: "dashboard"
@@ -387,7 +387,7 @@ async function loadAdmin() {
   state.announcements = announcementsPayload.announcements || [];
   state.community = communityPayload.community || {};
   state.settings = settingsPayload.settings;
-  state.round = settingsPayload.round;
+  state.day = settingsPayload.day;
   state.weightParameters = settingsPayload.weightParameters || null;
   if (!state.selectedProfileId && state.profiles.length) state.selectedProfileId = state.profiles[0].id;
   $("[data-admin-login]").hidden = true;
@@ -422,15 +422,13 @@ function renderAdminView() {
 
 function renderSettings() {
   if (!state.settings) return;
-  $("[data-match-interval]").value = String(state.settings.matchIntervalDays || 3);
   $("[data-match-note-input]").value = state.settings.matchWindowNote || "";
-  $("[data-admin-round-title]").textContent = state.round?.id || "本轮";
+  $("[data-admin-day-title]").textContent = state.day?.id || "今日匹配";
   $("[data-admin-profile-count]").textContent = String(state.profiles.length);
   $("[data-admin-match-count]").textContent = String(candidateMatches().length);
-  $("[data-admin-interval]").textContent = String(state.settings.matchIntervalDays || 3);
-  $("[data-admin-round-note]").textContent = state.round
-    ? `${state.round.label}。推送后自动补齐 6 条当前最高权重候选；已发布可撤回。`
-    : "轮次信息加载中。";
+  $("[data-admin-day-note]").textContent = state.day
+    ? `${state.day.label}。系统每天生成当前最高权重候选；已发布可撤回。`
+    : "每日匹配信息加载中。";
   const weightSummary = $("[data-weight-parameters-summary]");
   if (weightSummary) {
     const generatedAt = state.weightParameters?.generatedAt ? formatDateTime(state.weightParameters.generatedAt) : "";
@@ -857,7 +855,7 @@ function renderBestMatchTool() {
       <strong>${escapeHtml(state.bestMatch.best?.displayName || "最佳对象")}</strong>
       <span>交叉 ${escapeHtml(formatWeight(preview.crossWeight))} · 最终 ${escapeHtml(formatWeight(preview.adjustedScore))} · 个人调节 ${escapeHtml(formatWeight(preview.priorityWeight))}</span>
     </p>
-    <button class="table-action" type="button" data-apply-best-match>填入第一张候选卡片</button>
+    <button class="table-action" type="button" data-apply-best-match>放到第一条候选</button>
   `;
 }
 
@@ -919,17 +917,24 @@ async function findBestMatch() {
   }
 }
 
-async function applyBestMatchToFirstCard() {
+async function applyBestMatchToTop() {
   if (!state.bestMatch?.target?.id || !state.bestMatch?.best?.id) return;
-  const card = $("[data-match-id]");
-  if (!card) return;
-  const leftSelect = card.querySelector("[data-left-id]");
-  const rightSelect = card.querySelector("[data-right-id]");
-  updateSelectOptions(leftSelect, state.bestMatch.target.id, state.bestMatch.best.id);
-  updateSelectOptions(rightSelect, state.bestMatch.best.id, state.bestMatch.target.id);
-  leftSelect.value = state.bestMatch.target.id;
-  rightSelect.value = state.bestMatch.best.id;
-  await previewMatch(card);
+  const result = $("[data-best-match-result]");
+  try {
+    const payload = await api("/api/admin/matches/insert-best", {
+      method: "POST",
+      body: JSON.stringify({
+        leftId: state.bestMatch.target.id,
+        rightId: state.bestMatch.best.id
+      })
+    });
+    state.matches = payload.matches || state.matches;
+    state.bestMatch = null;
+    appendAdminLog("最高交叉权重匹配已放到第一条候选。");
+    renderAdminView();
+  } catch (error) {
+    if (result) result.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  }
 }
 
 function renderMatches() {
@@ -1009,13 +1014,12 @@ async function saveSettings() {
       method: "POST",
       body: JSON.stringify({
         settings: {
-          matchIntervalDays: $("[data-match-interval]").value,
           matchWindowNote: $("[data-match-note-input]").value
         }
       })
     });
     state.settings = payload.settings;
-    state.round = payload.round;
+    state.day = payload.day;
     state.weightParameters = payload.weightParameters || state.weightParameters;
     renderSettings();
     message.textContent = "设置已保存。";
@@ -1128,7 +1132,7 @@ document.addEventListener("click", event => {
   }
   const applyBestButton = event.target.closest("[data-apply-best-match]");
   if (applyBestButton) {
-    applyBestMatchToFirstCard();
+    applyBestMatchToTop();
   }
 });
 document.addEventListener("change", event => {

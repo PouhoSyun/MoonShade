@@ -13,7 +13,7 @@
         <span class="brand-dot"></span>
         <span>
           <strong>MoonShade 月影</strong>
-          <small class="app-version">version 1.11.1</small>
+          <small class="app-version">version 1.11.2</small>
         </span>
       </a>
       <nav>
@@ -35,14 +35,14 @@
               <p class="eyebrow">非盈利校内交友社区</p>
             </div>
             <img class="hero-logo" src="/assets/logo.png" alt="月影 MoonShade" />
-            <p>用同一轮月的清影</p>
+            <p>用同一弯月的清影</p>
             <p>环抱认真对待彼此的人</p>
           </div>
           <div class="hero-countdown">
-            <p class="round-label">预计下次匹配日期</p>
+            <p class="day-label">预计下次匹配日期</p>
             <div class="countdown" data-countdown>参考天数加载中</div>
-            <p class="round-note" data-round-note>匹配频率会随画像分布浮动</p>
-            <p class="round-note" data-matched-people>已匹配 0 人次</p>
+            <p class="day-note" data-day-note>匹配频率会随画像分布浮动</p>
+            <p class="day-note" data-matched-people>已匹配 0 人次</p>
           </div>
         </div>
         <aside class="home-login-panel">
@@ -99,7 +99,7 @@
       <section id="dashboard" class="view app-view">
         <div class="dashboard-grid">
           <section class="panel status-panel" data-profile-status-panel>
-            <p class="eyebrow">MoonShade · 本轮</p>
+            <p class="eyebrow">MoonShade · 每日匹配</p>
             <h2 data-dashboard-title>问卷收集中</h2>
             <div class="status-strip">
               <span data-close-time>下次匹配参考时间加载中</span>
@@ -108,10 +108,10 @@
             <div class="status-actions">
               <button class="secondary-action" type="button" data-toggle-match-paused>暂停匹配</button>
             </div>
-            <p class="status-note" data-match-note>原则上每五天进行一次匹配；实际频率会受用户画像分布、性别比例与偏好宽窄影响。</p>
+            <p class="status-note" data-match-note>每天都会安排匹配；实际分配会受个人预计窗口、画像分布、性别比例与偏好宽窄影响。</p>
           </section>
 
-          <section class="panel dashboard-summary-panel" aria-label="本轮匹配概览">
+          <section class="panel dashboard-summary-panel" aria-label="每日匹配概览">
             <div>
               <span>参与用户</span>
               <strong data-participants-count>0</strong>
@@ -135,7 +135,7 @@
           </section>
 
           <section class="panel rhythm-panel">
-            <h3>本轮节奏</h3>
+            <h3>每日节奏</h3>
             <p>系统会先看双方性别年龄是否匹配，再计算关系期待、沟通节奏、校区、成长背景、兴趣和身高等画像接近程度。</p>
             <button class="secondary-action" data-nav="survey">填写 / 更新问卷</button>
           </section>
@@ -192,7 +192,7 @@
             </div>
             <label class="consent">
               <input type="checkbox" name="consent" />
-              <span>我确认以上信息用于 MoonShade 本轮匹配，并理解联系方式会展示给匹配对象。由于用户池有限，可能匹配到不完全满足条件的对象。</span>
+              <span>我确认以上信息用于 MoonShade 每日匹配，并理解联系方式会展示给匹配对象。由于用户池有限，可能匹配到不完全满足条件的对象。</span>
             </label>
           </section>
 
@@ -207,7 +207,7 @@
 
       <section id="results" class="view app-view results-view">
         <section class="panel result-intro status-panel">
-          <p class="eyebrow">本轮结果</p>
+          <p class="eyebrow">匹配结果</p>
           <h2>匹配结果</h2>
           <p>系统匹配发布后，你将在这里看到最近两次的匹配结果。我们严格检查性别和年龄要求，再按画像接近程度排序。</p>
           <button class="secondary-action" data-refresh-results>刷新结果</button>

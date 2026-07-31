@@ -130,16 +130,16 @@ MOONSHADE_MAIL_TRANSPORT=sendmail SENDMAIL_PATH=/usr/sbin/sendmail npm start
 - 量表题：本人和期待对方的婚姻意向、生育意向。
 - 发布必要信息：联系方式和授权参与匹配。
 
-兴趣爱好卷为选填。每个分类最多选五项，用于计算共同兴趣和成功匹配后的共同爱好展示。最末的未涉及爱好填空会在匹配成功后展示给匹配对象，并参与文本兴趣命中。
+兴趣爱好卷为选填。每个分类最多选五项，用于计算共同兴趣和成功匹配后的共同爱好展示。最末的未涉及爱好填空只在匹配成功后展示给匹配对象，不参与权重计算。
 
 ## 管理员流程
 
 管理员后台的核心流程是“候选匹配 -> 推送 -> 已发布 -> 可撤回”。
 
 1. 候选匹配每天自动生成草稿，也可以在后台手动刷新候选。
-2. 候选列表只显示 `draft` 状态，并排除本轮已经发布匹配的用户和已暂停匹配的用户，避免同一批次里重复推送同一个人。
+2. 候选列表只显示 `draft` 状态，并排除未到个人分配窗口、已暂停匹配或不满足硬性边界的用户。
 3. 管理员点击候选卡片上的“推送”后，该条匹配变为 `published`，用户端才会看到结果和联系方式。
-4. 推送成功后，同轮草稿中涉及这两个人的其他候选会被清理，管理员列表会刷新。
+4. 推送成功后，当日草稿中涉及这两个人的其他候选会被清理，管理员列表会刷新。
 5. 已发布匹配被单独放在已发布页面，不再显示备注和状态选择。
 6. 点击“撤回”会直接删除该条发布记录，用户端不再显示，也不计入上次成功匹配、重复降权和历史匹配次数。
 
@@ -158,7 +158,7 @@ MOONSHADE_MAIL_TRANSPORT=sendmail SENDMAIL_PATH=/usr/sbin/sendmail npm start
 - `profileRankContext(profiles)`：把精准度和稀缺度放到当前画像池中排序，并重映射成温和系数。
 - `profileWeightFactors(profile, profiles, history)`：计算个人权重。
 - `scorePair(a, b)`：计算两人之间的布尔门槛和取向权重。
-- `generateRoundMatches(profiles, roundId, matches, settings)`：生成管理员候选列表。
+- `generateDailyMatches(profiles, matchDay, matches, settings)`：生成管理员候选列表。
 - `matchPreview(left, right, matches, settings, profiles)`：管理员调整或推送前重新计算权重。
 
 ### 个人权重

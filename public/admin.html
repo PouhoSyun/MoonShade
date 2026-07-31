@@ -55,17 +55,7 @@
           <section class="admin-overview">
             <section class="panel admin-settings-panel">
               <p class="eyebrow">Match Settings</p>
-              <h2>匹配轮次</h2>
-              <label>匹配间隔
-                <select data-match-interval>
-                  <option value="1">每 1 天</option>
-                  <option value="2">每 2 天</option>
-                  <option value="3">每 3 天</option>
-                  <option value="5">每 5 天</option>
-                  <option value="7">每 7 天</option>
-                  <option value="14">每 14 天</option>
-                </select>
-              </label>
+              <h2>每日匹配</h2>
               <label>状态页说明
                 <textarea data-match-note-input rows="3"></textarea>
               </label>
@@ -78,14 +68,13 @@
             </section>
 
             <section class="panel admin-stat-panel">
-              <p class="eyebrow">Current Round</p>
-              <h2 data-admin-round-title>本轮</h2>
+              <p class="eyebrow">Daily Matching</p>
+              <h2 data-admin-day-title>今日匹配</h2>
               <div class="admin-metrics">
                 <span><strong data-admin-profile-count>0</strong><small>份问卷</small></span>
                 <span><strong data-admin-match-count>0</strong><small>候选</small></span>
-                <span><strong data-admin-interval>3</strong><small>天/轮</small></span>
               </div>
-              <p data-admin-round-note>加载中</p>
+              <p data-admin-day-note>加载中</p>
             </section>
           </section>
 
