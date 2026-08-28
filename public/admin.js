@@ -127,6 +127,23 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+function matchTimestamp(match) {
+  return new Date(match.publishedAt || match.updatedAt || match.createdAt || 0).getTime() || 0;
+}
+
+function matchPairKey(match) {
+  return [match.leftId, match.rightId].map(String).sort().join("::");
+}
+
+function uniqueMatchesByPair(matches = []) {
+  const seen = new Map();
+  for (const match of [...matches].sort((a, b) => matchTimestamp(b) - matchTimestamp(a))) {
+    const key = matchPairKey(match);
+    if (!seen.has(key)) seen.set(key, match);
+  }
+  return [...seen.values()].sort((a, b) => matchTimestamp(b) - matchTimestamp(a));
+}
+
 function formatDateOnly(value) {
   if (!value) return "暂无";
   const date = new Date(value);
@@ -140,14 +157,6 @@ function scheduleText(frequency) {
   if (!frequency) return "暂无";
   if (frequency.eligible) return "已到可分配";
   return formatDateOnly(frequency.expectedNextAllocationAt);
-}
-
-function frequencyText(frequency) {
-  if (!frequency) return "暂无权重";
-  const gap = frequency.daysSinceLastMatch === null || frequency.daysSinceLastMatch === undefined
-    ? "暂无成功匹配"
-    : `距上次 ${frequency.daysSinceLastMatch} 天`;
-  return `${frequency.label} · 个人权重 ${frequency.personalWeight ?? frequency.priority ?? 0} · ${gap}`;
 }
 
 function studentIdFromEmail(email) {
@@ -397,14 +406,18 @@ async function loadAdmin() {
 }
 
 function candidateMatches() {
-  return state.matches.filter(match =>
+  const currentMatchDay = state.day?.id || "";
+  const publishedPairs = new Set(state.matches.filter(match => match.status === "published").map(matchPairKey));
+  return uniqueMatchesByPair(state.matches.filter(match =>
     match.status === "draft"
     && match.hardBlocked !== true
-  );
+    && (!currentMatchDay || match.matchDay === currentMatchDay)
+    && !publishedPairs.has(matchPairKey(match))
+  ));
 }
 
 function publishedMatches() {
-  return state.matches.filter(match => match.status === "published");
+  return uniqueMatchesByPair(state.matches.filter(match => match.status === "published"));
 }
 
 function renderAdminView() {
@@ -426,6 +439,8 @@ function renderSettings() {
   $("[data-admin-day-title]").textContent = state.day?.id || "今日匹配";
   $("[data-admin-profile-count]").textContent = String(state.profiles.length);
   $("[data-admin-match-count]").textContent = String(candidateMatches().length);
+  const publishedCount = $("[data-admin-published-count]");
+  if (publishedCount) publishedCount.textContent = String(publishedMatches().length);
   $("[data-admin-day-note]").textContent = state.day
     ? `${state.day.label}。系统每天生成当前最高权重候选；已发布可撤回。`
     : "每日匹配信息加载中。";
@@ -711,6 +726,7 @@ function renderProfileDetail() {
       ["授权参与", profile.consent ? "是" : "否"],
       ["匹配状态", profile.matchPaused ? "已暂停匹配" : "参与匹配"]
     ])}
+    ${renderProfileHistory(profile)}
     ${detailBlock("匹配权重", [
       ["权重标签", profile.matchFrequency?.label],
       ["完整度系数", formatWeight(profile.matchFrequency?.completenessCoefficient)],
@@ -733,11 +749,23 @@ function renderProfileDetail() {
   `;
 }
 
-function profileOptions(selectedId) {
-  return state.profiles
-    .filter(profile => profile.matchPaused !== true || profile.id === selectedId)
-    .map(profile => `<option value="${profile.id}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profileLabel(profile))}</option>`)
-    .join("");
+function renderProfileHistory(profile) {
+  const byId = new Map(state.profiles.map(item => [item.id, item]));
+  const matches = uniqueMatchesByPair(state.matches.filter(match =>
+    match.status === "published"
+    && (match.leftId === profile.id || match.rightId === profile.id)
+  ));
+  if (!matches.length) {
+    return detailBlock("历史匹配", [["已发布匹配", "暂无"]]);
+  }
+  return detailBlock(`历史匹配（${matches.length}）`, matches.slice(0, 6).map(match => {
+    const otherId = match.leftId === profile.id ? match.rightId : match.leftId;
+    const other = byId.get(otherId);
+    return [
+      formatDateTime(match.publishedAt || match.updatedAt || match.createdAt),
+      `${other?.displayName || "未命名"} · ${studentIdOnly(other?.email)}`
+    ];
+  }));
 }
 
 function asList(value) {

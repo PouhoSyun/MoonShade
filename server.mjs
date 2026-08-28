@@ -1483,28 +1483,22 @@ function matchTime(match) {
 
 function matchHistory(matches = []) {
   const pairCounts = new Map();
-  const lastPartners = new Map();
   const lastMatchedAt = new Map();
-  const proposals = matches
-    .filter(match => match.status === "published")
-    .sort((a, b) => matchTime(a) - matchTime(b));
+  const proposals = [...matches].sort((a, b) => matchTime(a) - matchTime(b));
   for (const match of proposals) {
     const key = pairKey(match.leftId, match.rightId);
     pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
     const at = matchTime(match);
-    lastPartners.set(match.leftId, match.rightId);
-    lastPartners.set(match.rightId, match.leftId);
     if (match.status === "published") {
       lastMatchedAt.set(match.leftId, at);
       lastMatchedAt.set(match.rightId, at);
     }
   }
-  return { pairCounts, lastPartners, lastMatchedAt };
+  return { pairCounts, lastMatchedAt };
 }
 
 function historicalPairKeys(matches = []) {
   return new Set(matches
-    .filter(match => match.status === "published")
     .map(match => pairKey(match.leftId, match.rightId)));
 }
 
@@ -1728,7 +1722,6 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
       const key = pairKey(left.id, right.id);
       if (historicalPairs.has(key)) continue;
       const repeatedCount = history.pairCounts.get(key) || 0;
-      const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
       const leftFrequency = frequencies.get(left.id) || { personalWeight: 0 };
       const rightFrequency = frequencies.get(right.id) || { personalWeight: 0 };
       const personalWeight = roundNumber((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
@@ -1736,7 +1729,7 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
       const crossWeight = roundNumber(priorityWeight * scored.booleanGate * scored.orientationWeight);
       const repeatFactor = pairRepeatFactor(repeatedCount);
       const adjustedScore = roundNumber(crossWeight * repeatFactor);
-      candidates.push({ left, right, adjustedScore, personalWeight, priorityWeight, crossWeight, repeatedCount, lastRepeat, repeatFactor, ...scored });
+      candidates.push({ left, right, adjustedScore, personalWeight, priorityWeight, crossWeight, repeatedCount, repeatFactor, ...scored });
     }
   }
   candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
@@ -1815,9 +1808,9 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
 function dedupeDailyDraftMatches(data, matchDay) {
   const seen = new Map();
   const keepIds = new Set();
-  const publishedPairs = historicalPairKeys(data.matches);
+  const seenPairs = historicalPairKeys(data.matches);
   const draftMatches = data.matches
-    .filter(match => matchDayKey(match) === matchDay && match.status === "draft" && !publishedPairs.has(pairKey(match.leftId, match.rightId)))
+    .filter(match => matchDayKey(match) === matchDay && match.status === "draft" && !seenPairs.has(pairKey(match.leftId, match.rightId)))
     .sort((a, b) => {
       const pinDelta = matchTime(b.adminPinnedAt ? { updatedAt: b.adminPinnedAt } : {}) - matchTime(a.adminPinnedAt ? { updatedAt: a.adminPinnedAt } : {});
       if (pinDelta) return pinDelta;
@@ -1952,13 +1945,14 @@ function insertBestDraftMatch(data, leftId, rightId) {
   return { match: draft };
 }
 
-function publishBestDraftMatch(data, matchDay) {
+function publishBestDraftMatch(data, matchDay, blockedIds = new Set()) {
   dedupeDailyDraftMatches(data, matchDay);
   const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
   const activeProfiles = data.profiles.filter(isActiveProfile);
   const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
   const candidates = data.matches
     .filter(match => matchDayKey(match) === matchDay && match.status === "draft")
+    .filter(match => !blockedIds.has(match.leftId) && !blockedIds.has(match.rightId))
     .sort((a, b) => (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0));
   for (const match of candidates) {
     const left = byId.get(match.leftId);
@@ -1967,7 +1961,7 @@ function publishBestDraftMatch(data, matchDay) {
     if (frequencyMap.get(left.id)?.eligible !== true || frequencyMap.get(right.id)?.eligible !== true) continue;
     const publishedPairKeys = historicalPairKeys(data.matches.filter(item => item.id !== match.id));
     if (publishedPairKeys.has(pairKey(match.leftId, match.rightId))) continue;
-    const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
+    const historyMatches = data.matches.filter(item => item.status === "published");
     const preview = matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters);
     if (!preview || preview.hardBlocked || (preview.weightBreakdown?.repeatFactor ?? 1) <= 0 || (preview.adjustedScore || 0) <= 0) continue;
     match.leftId = preview.left?.id || match.leftId;
@@ -2012,7 +2006,6 @@ function matchPreview(left, right, matches, settings, profiles = [left, right], 
   const key = pairKey(left.id, right.id);
   const history = matchHistory(matches);
   const repeatedCount = history.pairCounts.get(key) || 0;
-  const lastRepeat = history.lastPartners.get(left.id) === right.id || history.lastPartners.get(right.id) === left.id;
   const repeatFactor = pairRepeatFactor(repeatedCount);
   const finalWeight = roundNumber(crossWeight * repeatFactor);
   return {
@@ -2080,9 +2073,10 @@ function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultD
 
 function publishedMatchesFor(profile, profiles, matches) {
   const byId = new Map(profiles.map(item => [item.id, item]));
-  return matches
+  return [...matches]
     .filter(match => match.status === "published" && (match.leftId === profile.id || match.rightId === profile.id))
     .sort((a, b) => matchTime(b) - matchTime(a))
+    .filter((match, index, list) => index === list.findIndex(item => pairKey(item.leftId, item.rightId) === pairKey(match.leftId, match.rightId)))
     .slice(0, 2)
     .map(match => {
       const otherId = match.leftId === profile.id ? match.rightId : match.leftId;
@@ -2273,14 +2267,14 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
     if (match.status !== "draft") return true;
     const pair = pairKey(match.leftId, match.rightId);
     if (publishedPairs.has(pair)) return false;
-    const key = `${matchDayKey(match)}::${pair}`;
+    const key = pair;
     if (seenDraftPairs.has(key)) return false;
     seenDraftPairs.add(key);
     return true;
   }).map(match => {
     const leftProfile = byId.get(match.leftId);
     const rightProfile = byId.get(match.rightId);
-    const historyForPreview = historyMatches.filter(item => item.status === "published" && item.id !== match.id);
+    const historyForPreview = historyMatches.filter(item => item.status === "published");
     const preview = leftProfile && rightProfile
       ? matchPreview(leftProfile, rightProfile, historyForPreview, settings, profiles, weightParameters)
       : null;
@@ -2634,12 +2628,15 @@ async function handleApi(req, res, url) {
       const targetCount = clampNumber(Number.isInteger(requestedCount) ? requestedCount : 1, 1, 20);
       let published = 0;
       const publishedIds = [];
+      const blockedIds = new Set();
       for (let index = 0; index < targetCount; index += 1) {
         replaceDailyDraftMatches(data, matchDay);
-        const match = publishBestDraftMatch(data, matchDay);
+        const match = publishBestDraftMatch(data, matchDay, blockedIds);
         if (!match) break;
         published += 1;
         publishedIds.push(match.id);
+        blockedIds.add(match.leftId);
+        blockedIds.add(match.rightId);
       }
       replaceDailyDraftMatches(data, matchDay);
       await writeJson(DATA_FILE, data);
@@ -2726,7 +2723,7 @@ async function handleApi(req, res, url) {
           || pairKey(item.leftId, item.rightId) !== currentPairKey
         );
       }
-      const historyMatches = data.matches.filter(item => item.status === "published" && item.id !== match.id);
+      const historyMatches = data.matches.filter(item => item.status === "published");
       const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters) : null;
       if (preview) {
         match.score = preview.score;
@@ -2769,7 +2766,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/day") {
     const day = currentMatchDay(new Date(), data.settings);
     const dayProfiles = data.profiles.filter(isActiveProfile);
-    const publishedMatchCount = data.matches.filter(match => match.status === "published").length;
+    const publishedMatchCount = historicalPairKeys(data.matches.filter(match => match.status === "published")).size;
     return sendJson(res, 200, {
       day,
       settings: cleanSettings(data.settings),
