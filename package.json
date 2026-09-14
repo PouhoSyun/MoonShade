@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "NODE_ENV=development node server.mjs",
+    "test:matching": "node scripts/test-matching.mjs",
     "test:email": "node scripts/test-email.mjs"
   },
   "engines": {

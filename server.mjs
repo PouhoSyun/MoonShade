@@ -1484,21 +1484,22 @@ function matchTime(match) {
 function matchHistory(matches = []) {
   const pairCounts = new Map();
   const lastMatchedAt = new Map();
-  const proposals = [...matches].sort((a, b) => matchTime(a) - matchTime(b));
+  const proposals = matches
+    .filter(match => match.status === "published")
+    .sort((a, b) => matchTime(a) - matchTime(b));
   for (const match of proposals) {
     const key = pairKey(match.leftId, match.rightId);
     pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
     const at = matchTime(match);
-    if (match.status === "published") {
-      lastMatchedAt.set(match.leftId, at);
-      lastMatchedAt.set(match.rightId, at);
-    }
+    lastMatchedAt.set(match.leftId, at);
+    lastMatchedAt.set(match.rightId, at);
   }
   return { pairCounts, lastMatchedAt };
 }
 
 function historicalPairKeys(matches = []) {
   return new Set(matches
+    .filter(match => match.status === "published")
     .map(match => pairKey(match.leftId, match.rightId)));
 }
 
@@ -2882,21 +2883,29 @@ async function serveStatic(req, res, url) {
   }
 }
 
-await ensureDataFile();
+if (process.env.MOONSHADE_TEST !== "1") {
+  await ensureDataFile();
 
-const server = createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    if (url.pathname.startsWith("/api/")) {
-      await handleApi(req, res, url);
-    } else {
-      await serveStatic(req, res, url);
+  const server = createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname.startsWith("/api/")) {
+        await handleApi(req, res, url);
+      } else {
+        await serveStatic(req, res, url);
+      }
+    } catch (error) {
+      sendJson(res, 500, { error: error.message || "服务器错误" });
     }
-  } catch (error) {
-    sendJson(res, 500, { error: error.message || "服务器错误" });
-  }
-});
+  });
 
-server.listen(PORT, () => {
-  console.log(`MoonShade is running at http://localhost:${PORT}`);
-});
+  server.listen(PORT, () => {
+    console.log(`MoonShade is running at http://localhost:${PORT}`);
+  });
+}
+
+export {
+  ensureDailyDraftMatches,
+  localDateKey,
+  normalizeData
+};
