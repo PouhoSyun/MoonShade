@@ -1073,17 +1073,28 @@ async function updateWeightParameters() {
 }
 
 async function pushMatch(card) {
-  await api("/api/admin/matches/update", {
-    method: "POST",
-    body: JSON.stringify({
-      matchId: card.dataset.matchId,
-      leftId: card.querySelector("[data-left-id]").value,
-      rightId: card.querySelector("[data-right-id]").value,
-      status: "published"
-    })
-  });
-  state.view = "dashboard";
-  await loadAdmin();
+  const button = card?.querySelector("[data-push-match]");
+  if (!card || !button || button.disabled) return;
+  button.disabled = true;
+  button.textContent = "推送中...";
+  try {
+    await api("/api/admin/matches/update", {
+      method: "POST",
+      body: JSON.stringify({
+        matchId: card.dataset.matchId,
+        leftId: card.querySelector("[data-left-id]").value,
+        rightId: card.querySelector("[data-right-id]").value,
+        status: "published"
+      })
+    });
+    appendAdminLog("匹配已推送，用户结果页现在可以查看。");
+    state.view = "dashboard";
+    await loadAdmin();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "推送";
+    appendAdminLog(`推送失败：${error.message}`);
+  }
 }
 
 async function withdrawMatch(card) {

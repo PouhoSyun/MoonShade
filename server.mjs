@@ -2906,6 +2906,7 @@ if (process.env.MOONSHADE_TEST !== "1") {
 
 export {
   ensureDailyDraftMatches,
+  handleApi,
   localDateKey,
   normalizeData
 };
