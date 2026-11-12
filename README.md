@@ -221,11 +221,11 @@ freeTextBonus = freeTextInterestHits * 0.07
 ```text
 personalWeightProduct = left.personalWeight * right.personalWeight
 crossWeight = personalWeightProduct * booleanGate * orientationWeight
-repeatFactor = 0.72 ^ repeatedCount * (lastRepeat ? 0.65 : 1)
+repeatFactor = 0  如果同一对距上次发布不足 30 天，否则 1
 finalWeight = crossWeight * repeatFactor
 ```
 
-候选列表按 `crossWeight` 优先排序，再按 `finalWeight` 排序，取前 10 个给管理员确认。重复降权只参考已发布历史；管理员在推送前更换方案不会污染历史参数。
+候选列表先放从未匹配过的新配对，再放冷却期已过的重复配对；同组内按 `crossWeight`、`finalWeight` 排序，取前 6 个给管理员确认。重复降权只参考已发布历史；管理员在推送前更换方案不会污染历史参数。
 
 ## 常改位置
 

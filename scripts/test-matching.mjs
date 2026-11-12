@@ -164,6 +164,22 @@ try {
     handleApi(refreshRequest, result, new URL("http://localhost/api/admin/matches")).catch(reject);
   });
   assert.equal(refreshResponse.statusCode, 200, refreshResponse.body);
+  const repeatData = normalizeData({
+    profiles,
+    matches: [
+      { id: "recent", leftId: "old-draft-left", rightId: "old-draft-right", status: "published", publishedAt: new Date(now - 20 * 86_400_000).toISOString() },
+      { id: "cooled", leftId: "new-left", rightId: "new-right", status: "published", publishedAt: new Date(now - 40 * 86_400_000).toISOString() }
+    ],
+    settings: {}
+  });
+  ensureDailyDraftMatches(repeatData);
+  const repeatDrafts = repeatData.matches.filter(match => match.status === "draft" && match.matchDay === currentDay);
+  const hasPair = (a, b) => repeatDrafts.findIndex(match => new Set([match.leftId, match.rightId]).has(a) && new Set([match.leftId, match.rightId]).has(b));
+  assert.equal(hasPair("old-draft-left", "old-draft-right"), -1, "冷却期内的配对不能再次进入候选");
+  assert.ok(hasPair("new-left", "new-right") >= 0, "冷却期满的配对可以再次进入候选");
+  assert.ok(hasPair("old-draft-left", "new-right") >= 0, "新配对应进入候选");
+  assert.ok(repeatDrafts.findIndex(match => (match.repeatedCount || 0) > 0) > repeatDrafts.findIndex(match => !match.repeatedCount), "新配对应排在重复配对之前");
+
   console.log(`matching regression passed: ${candidates.length} candidate(s)`);
 } finally {
   await rm(tempDir, { recursive: true, force: true });

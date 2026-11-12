@@ -43,7 +43,8 @@ const ADMIN_PASSWORD = process.env.MOONSHADE_ADMIN_PASSWORD || "moodylitchee";
 const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 const REQUIRE_SECURE_ADMIN_PASSWORD = process.env.NODE_ENV === "production" || process.env.MOONSHADE_REQUIRE_SECURE_ADMIN === "1";
 const ALLOW_DEV_CODE = envBool(process.env.MOONSHADE_ALLOW_DEV_CODE, IS_DEVELOPMENT);
-const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v6-eligible-window";
+const DAILY_MATCH_ALGORITHM_VERSION = "daily-weight-v7-repeat-cooldown";
+const REPEAT_PAIR_COOLDOWN_DAYS = 30;
 const WEIGHT_PARAMETER_VERSION = "weight-params-v2";
 const PERSONAL_PRODUCT_EXPONENT = 0.35;
 const PERSONAL_PRODUCT_MIN = 0.55;
@@ -1483,28 +1484,44 @@ function matchTime(match) {
 
 function matchHistory(matches = []) {
   const pairCounts = new Map();
+  const pairLastAt = new Map();
   const lastMatchedAt = new Map();
   const proposals = matches
     .filter(match => match.status === "published")
     .sort((a, b) => matchTime(a) - matchTime(b));
   for (const match of proposals) {
     const key = pairKey(match.leftId, match.rightId);
-    pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
     const at = matchTime(match);
+    pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+    pairLastAt.set(key, at);
     lastMatchedAt.set(match.leftId, at);
     lastMatchedAt.set(match.rightId, at);
   }
-  return { pairCounts, lastMatchedAt };
+  return { pairCounts, pairLastAt, lastMatchedAt };
 }
 
-function historicalPairKeys(matches = []) {
-  return new Set(matches
-    .filter(match => match.status === "published")
-    .map(match => pairKey(match.leftId, match.rightId)));
+// 防重复：同一对在冷却期内 repeatFactor = 0（不进候选、不能推送）；
+// 冷却期满可以再次出现，但排序时永远排在新配对之后（见 compareCandidates）。
+function pairRepeatInfo(history, leftId, rightId, now = Date.now()) {
+  const key = pairKey(leftId, rightId);
+  const repeatedCount = history.pairCounts.get(key) || 0;
+  const cooling = repeatedCount > 0 && calendarDaysSince(history.pairLastAt.get(key), now) < REPEAT_PAIR_COOLDOWN_DAYS;
+  return { repeatedCount, repeatFactor: cooling ? 0 : 1 };
 }
 
-function pairRepeatFactor(repeatedCount) {
-  return repeatedCount > 0 ? 0 : 1;
+function pairCoolingDown(matches, leftId, rightId) {
+  return pairRepeatInfo(matchHistory(matches), leftId, rightId).repeatFactor === 0;
+}
+
+function repeatReason(repeatFactor, repeatedCount) {
+  if (repeatFactor === 0) return `${REPEAT_PAIR_COOLDOWN_DAYS} 天内已匹配过，暂不重复`;
+  return repeatedCount ? `冷却期已过的重复配对（第 ${repeatedCount + 1} 次），排在新配对之后` : "无历史重复";
+}
+
+function compareCandidates(a, b) {
+  return (((a.repeatedCount || 0) > 0) - ((b.repeatedCount || 0) > 0))
+    || ((b.crossWeight ?? b.score ?? 0) - (a.crossWeight ?? a.score ?? 0))
+    || ((b.adjustedScore || 0) - (a.adjustedScore || 0));
 }
 
 function profileFrequency(profile, profiles, history, settings = defaultData.settings, now = Date.now(), genderRanks = new Map(), rankContext = profileRankContext(profiles)) {
@@ -1684,23 +1701,8 @@ function bestMatchesFor(profile, profiles) {
     }));
 }
 
-function selectedCandidateMatches(candidates, targetCount = 6) {
-  const selected = [];
-  const selectedKeys = new Set();
-  const addCandidate = candidate => {
-    if (!candidate) return;
-    const key = pairKey(candidate.left.id, candidate.right.id);
-    if (selectedKeys.has(key)) return;
-    selected.push(candidate);
-    selectedKeys.add(key);
-  };
-  candidates.slice(0, targetCount).forEach(addCandidate);
-  return selected.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
-}
-
 function generateDailyMatches(profiles, matchDay, matches = [], settings = defaultData.settings, weightParameters = null) {
   const history = matchHistory(matches);
-  const historicalPairs = historicalPairKeys(matches);
   const activeProfiles = profiles.filter(isActiveProfile);
   const frequencies = frequencyMapFor(activeProfiles, matches, settings, weightParameters);
   const pool = activeProfiles.filter(profile =>
@@ -1720,21 +1722,19 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
       const [left, right] = displayOrderedProfilePair(activePool[i], activePool[j]);
       const scored = scorePair(left, right);
       if (!scored || scored.hardBlocked) continue;
-      const key = pairKey(left.id, right.id);
-      if (historicalPairs.has(key)) continue;
-      const repeatedCount = history.pairCounts.get(key) || 0;
+      const { repeatedCount, repeatFactor } = pairRepeatInfo(history, left.id, right.id);
+      if (repeatFactor === 0) continue;
       const leftFrequency = frequencies.get(left.id) || { personalWeight: 0 };
       const rightFrequency = frequencies.get(right.id) || { personalWeight: 0 };
       const personalWeight = roundNumber((leftFrequency.personalWeight || 0) * (rightFrequency.personalWeight || 0));
       const priorityWeight = pairPriorityWeight(personalWeight);
       const crossWeight = roundNumber(priorityWeight * scored.booleanGate * scored.orientationWeight);
-      const repeatFactor = pairRepeatFactor(repeatedCount);
       const adjustedScore = roundNumber(crossWeight * repeatFactor);
       candidates.push({ left, right, adjustedScore, personalWeight, priorityWeight, crossWeight, repeatedCount, repeatFactor, ...scored });
     }
   }
-  candidates.sort((a, b) => (b.crossWeight - a.crossWeight) || (b.adjustedScore - a.adjustedScore));
-  for (const best of selectedCandidateMatches(candidates, 6)) {
+  candidates.sort(compareCandidates);
+  for (const best of candidates.slice(0, 6)) {
     const leftFrequency = frequencies.get(best.left.id);
     const rightFrequency = frequencies.get(best.right.id);
     const boundaryWarnings = matchBoundaryWarnings(best.left, best.right);
@@ -1748,6 +1748,7 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
       rightId: best.right.id,
       score: best.crossWeight,
       adjustedScore: best.adjustedScore,
+      repeatedCount: best.repeatedCount,
       crossWeight: best.crossWeight,
       personalWeight: best.personalWeight,
       priorityWeight: best.priorityWeight,
@@ -1791,7 +1792,7 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
         `取向权重 ${best.orientationWeight}`,
         `交叉权重 ${best.crossWeight}`,
         best.hardBlocked ? "硬性不符合，保留为 0 权重候选" : (boundaryWarnings.length ? `存在 ${boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过"),
-        best.repeatedCount ? `重复降权系数 ${best.repeatFactor}` : "无历史重复降权"
+        repeatReason(best.repeatFactor, best.repeatedCount)
       ].slice(0, 8),
       status: "draft",
       notes: "",
@@ -1809,9 +1810,8 @@ function generateDailyMatches(profiles, matchDay, matches = [], settings = defau
 function dedupeDailyDraftMatches(data, matchDay) {
   const seen = new Map();
   const keepIds = new Set();
-  const seenPairs = historicalPairKeys(data.matches);
   const draftMatches = data.matches
-    .filter(match => matchDayKey(match) === matchDay && match.status === "draft" && !seenPairs.has(pairKey(match.leftId, match.rightId)))
+    .filter(match => matchDayKey(match) === matchDay && match.status === "draft")
     .sort((a, b) => {
       const pinDelta = matchTime(b.adminPinnedAt ? { updatedAt: b.adminPinnedAt } : {}) - matchTime(a.adminPinnedAt ? { updatedAt: a.adminPinnedAt } : {});
       if (pinDelta) return pinDelta;
@@ -1886,6 +1886,7 @@ function draftMatchFromPreview(preview, matchDay, options = {}) {
     rightId: preview.right.id,
     score: preview.crossWeight,
     adjustedScore: preview.adjustedScore,
+    repeatedCount: preview.repeatedCount,
     crossWeight: preview.crossWeight,
     personalWeight: preview.personalWeight,
     priorityWeight: preview.priorityWeight,
@@ -1904,7 +1905,7 @@ function draftMatchFromPreview(preview, matchDay, options = {}) {
       `取向权重 ${preview.orientationWeight}`,
       `交叉权重 ${preview.crossWeight}`,
       preview.boundaryWarnings?.length ? `存在 ${preview.boundaryWarnings.length} 项可接受范围提醒` : "可接受范围检查通过",
-      preview.weightBreakdown?.repeatFactor === 0 ? "历史已出现，重复降权系数 0" : "无历史重复降权"
+      repeatReason(preview.weightBreakdown?.repeatFactor, preview.repeatedCount)
     ].slice(0, 8),
     boundaryWarnings: preview.boundaryWarnings || [],
     status: "draft",
@@ -1925,11 +1926,10 @@ function insertBestDraftMatch(data, leftId, rightId) {
   if (!left || !right) return { error: "候选用户不存在。", statusCode: 404 };
   if (!isActiveProfile(left) || !isActiveProfile(right)) return { error: "暂停匹配或未授权用户不能进入候选。", statusCode: 400 };
   if (!hardBoundaryCompatible(left, right)) return { error: "性别、学校、校区或年龄不符合硬性条件。", statusCode: 400 };
-  const publishedPairKeys = historicalPairKeys(data.matches);
-  if (publishedPairKeys.has(pairKey(left.id, right.id))) return { error: "这两位用户已经出现过匹配，不会再次进入候选。", statusCode: 409 };
+  if (pairCoolingDown(data.matches, left.id, right.id)) return { error: `这两位用户 ${REPEAT_PAIR_COOLDOWN_DAYS} 天内已经匹配过，暂不能再次进入候选。`, statusCode: 409 };
   const historyMatches = data.matches.filter(item => item.status === "published");
   const preview = matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters);
-  if (!preview || preview.hardBlocked || (preview.weightBreakdown?.repeatFactor ?? 1) <= 0 || (preview.adjustedScore || 0) <= 0) {
+  if (!preview || preview.hardBlocked || (preview.adjustedScore || 0) <= 0) {
     return { error: "这组匹配当前最终权重为 0，不能放入候选。", statusCode: 400 };
   }
   const key = pairKey(preview.left.id, preview.right.id);
@@ -1946,46 +1946,51 @@ function insertBestDraftMatch(data, leftId, rightId) {
   return { match: draft };
 }
 
+function applyPreview(match, preview) {
+  delete match.rawScore;
+  delete match.maxScore;
+  Object.assign(match, {
+    leftId: preview.left?.id || match.leftId,
+    rightId: preview.right?.id || match.rightId,
+    score: preview.score,
+    crossWeight: preview.crossWeight,
+    personalWeight: preview.personalWeight,
+    priorityWeight: preview.priorityWeight,
+    adjustedScore: preview.adjustedScore,
+    repeatedCount: preview.repeatedCount,
+    weightBreakdown: preview.weightBreakdown,
+    reasons: preview.reasons,
+    boundaryWarnings: preview.boundaryWarnings,
+    booleanGate: preview.booleanGate,
+    orientationWeight: preview.orientationWeight,
+    interestMatchCount: preview.interestMatchCount,
+    freeTextInterestHits: preview.freeTextInterestHits,
+    softViolationCount: preview.softViolationCount,
+    hardBlocked: preview.hardBlocked
+  });
+}
+
 function publishBestDraftMatch(data, matchDay, blockedIds = new Set()) {
   dedupeDailyDraftMatches(data, matchDay);
   const byId = new Map(data.profiles.map(profile => [profile.id, profile]));
   const activeProfiles = data.profiles.filter(isActiveProfile);
   const frequencyMap = frequencyMapFor(activeProfiles, data.matches, data.settings, data.weightParameters);
+  const historyMatches = data.matches.filter(item => item.status === "published");
   const candidates = data.matches
     .filter(match => matchDayKey(match) === matchDay && match.status === "draft")
     .filter(match => !blockedIds.has(match.leftId) && !blockedIds.has(match.rightId))
-    .sort((a, b) => (b.adjustedScore || b.crossWeight || b.score || 0) - (a.adjustedScore || a.crossWeight || a.score || 0));
+    .sort(compareCandidates);
   for (const match of candidates) {
     const left = byId.get(match.leftId);
     const right = byId.get(match.rightId);
     if (!isActiveProfile(left) || !isActiveProfile(right) || !hardBoundaryCompatible(left, right)) continue;
     if (frequencyMap.get(left.id)?.eligible !== true || frequencyMap.get(right.id)?.eligible !== true) continue;
-    const publishedPairKeys = historicalPairKeys(data.matches.filter(item => item.id !== match.id));
-    if (publishedPairKeys.has(pairKey(match.leftId, match.rightId))) continue;
-    const historyMatches = data.matches.filter(item => item.status === "published");
     const preview = matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters);
-    if (!preview || preview.hardBlocked || (preview.weightBreakdown?.repeatFactor ?? 1) <= 0 || (preview.adjustedScore || 0) <= 0) continue;
-    match.leftId = preview.left?.id || match.leftId;
-    match.rightId = preview.right?.id || match.rightId;
-    match.score = preview.score;
-    delete match.rawScore;
-    delete match.maxScore;
-    match.crossWeight = preview.crossWeight;
-    match.personalWeight = preview.personalWeight;
-    match.priorityWeight = preview.priorityWeight;
-    match.adjustedScore = preview.adjustedScore;
-    match.weightBreakdown = preview.weightBreakdown;
-    match.reasons = preview.reasons;
-    match.boundaryWarnings = preview.boundaryWarnings;
-    match.booleanGate = preview.booleanGate;
-    match.orientationWeight = preview.orientationWeight;
-    match.interestMatchCount = preview.interestMatchCount;
-    match.freeTextInterestHits = preview.freeTextInterestHits;
-    match.softViolationCount = preview.softViolationCount;
-    match.hardBlocked = preview.hardBlocked;
+    if (!preview || preview.hardBlocked || (preview.adjustedScore || 0) <= 0) continue;
+    applyPreview(match, preview);
     match.status = "published";
     match.publishedAt = new Date().toISOString();
-    match.updatedAt = new Date().toISOString();
+    match.updatedAt = match.publishedAt;
     return match;
   }
   return null;
@@ -2004,13 +2009,11 @@ function matchPreview(left, right, matches, settings, profiles = [left, right], 
   const personalWeight = roundNumber((leftFrequency?.personalWeight || 0) * (rightFrequency?.personalWeight || 0));
   const priorityWeight = pairPriorityWeight(personalWeight);
   const crossWeight = roundNumber(priorityWeight * (scored?.booleanGate || 0) * (scored?.orientationWeight || 0));
-  const key = pairKey(left.id, right.id);
-  const history = matchHistory(matches);
-  const repeatedCount = history.pairCounts.get(key) || 0;
-  const repeatFactor = pairRepeatFactor(repeatedCount);
+  const { repeatedCount, repeatFactor } = pairRepeatInfo(matchHistory(matches), left.id, right.id);
   const finalWeight = roundNumber(crossWeight * repeatFactor);
   return {
     hardBlocked,
+    repeatedCount,
     score: crossWeight,
     crossWeight,
     personalWeight,
@@ -2063,13 +2066,8 @@ function bestCrossWeightMatchFor(profile, profiles, matches, settings = defaultD
     .map(candidate => matchPreview(profile, candidate, historyMatches, settings, activeProfiles, weightParameters))
     .filter(Boolean)
     .filter(preview => !preview.hardBlocked)
-    .filter(preview => (preview.weightBreakdown?.repeatFactor ?? 1) > 0)
     .filter(preview => (preview.adjustedScore || 0) > 0)
-    .sort((a, b) =>
-      (b.crossWeight - a.crossWeight)
-      || ((b.adjustedScore || 0) - (a.adjustedScore || 0))
-      || ((b.orientationWeight || 0) - (a.orientationWeight || 0))
-    )[0] || null;
+    .sort((a, b) => compareCandidates(a, b) || ((b.orientationWeight || 0) - (a.orientationWeight || 0)))[0] || null;
 }
 
 function publishedMatchesFor(profile, profiles, matches) {
@@ -2255,7 +2253,7 @@ function adminMatchProfile(profile, context = {}) {
 function serializeAdminMatches(matches, profiles, settings = defaultData.settings, historyMatches = matches, weightParameters = null) {
   const byId = new Map(profiles.map(profile => [profile.id, profile]));
   const frequencies = frequencyMapFor(profiles.filter(isActiveProfile), historyMatches, settings, weightParameters);
-  const publishedPairs = historicalPairKeys(historyMatches);
+  const history = matchHistory(historyMatches);
   const seenDraftPairs = new Set();
   return [...matches].sort((a, b) => {
     if (a.status === "draft" && b.status === "draft") {
@@ -2266,10 +2264,8 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
     return matchTime(b) - matchTime(a);
   }).filter(match => {
     if (match.status !== "draft") return true;
-    const pair = pairKey(match.leftId, match.rightId);
-    if (publishedPairs.has(pair)) return false;
-    const key = pair;
-    if (seenDraftPairs.has(key)) return false;
+    const key = pairKey(match.leftId, match.rightId);
+    if (seenDraftPairs.has(key) || pairRepeatInfo(history, match.leftId, match.rightId).repeatFactor === 0) return false;
     seenDraftPairs.add(key);
     return true;
   }).map(match => {
@@ -2286,6 +2282,7 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
         rightId: preview.right?.id || match.rightId,
         score: preview.score,
         adjustedScore: preview.adjustedScore,
+        repeatedCount: preview.repeatedCount,
         crossWeight: preview.crossWeight,
         personalWeight: preview.personalWeight,
         priorityWeight: preview.priorityWeight,
@@ -2302,7 +2299,7 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
           `布尔门槛 ${preview.booleanGate}`,
           `取向权重 ${preview.orientationWeight}`,
           `交叉权重 ${preview.crossWeight}`,
-          preview.weightBreakdown?.repeatFactor === 0 ? "历史已出现，重复降权系数 0" : "无历史重复降权"
+          repeatReason(preview.weightBreakdown?.repeatFactor, preview.repeatedCount)
         ].slice(0, 8),
         weightBreakdown: preview.weightBreakdown
       } : {}),
@@ -2709,11 +2706,12 @@ async function handleApi(req, res, url) {
       const right = byIdForOrder.get(match.rightId);
       if (!isActiveProfile(left) || !isActiveProfile(right)) return sendJson(res, 400, { error: "暂停匹配或未授权用户不能被推送匹配。" });
       if (!hardBoundaryCompatible(left, right)) return sendJson(res, 400, { error: "性别、学校、校区或年龄不符合硬性条件。" });
-      const publishedPairKeys = historicalPairKeys(data.matches.filter(item => item.id !== match.id));
-      if (publishedPairKeys.has(pairKey(match.leftId, match.rightId))) {
-        data.matches = data.matches.filter(item => item.id !== match.id);
-        await writeJson(DATA_FILE, data);
-        return sendJson(res, 409, { error: "这两位用户已经出现过匹配，不会再次进入候选或推送。" });
+      if (pairCoolingDown(data.matches.filter(item => item.id !== match.id), match.leftId, match.rightId)) {
+        if (match.status === "draft") {
+          data.matches = data.matches.filter(item => item.id !== match.id);
+          await writeJson(DATA_FILE, data);
+        }
+        return sendJson(res, 409, { error: `这两位用户 ${REPEAT_PAIR_COOLDOWN_DAYS} 天内已经匹配过，暂不能再次推送。` });
       }
       if (match.status === "draft") {
         const currentPairKey = pairKey(match.leftId, match.rightId);
@@ -2726,23 +2724,7 @@ async function handleApi(req, res, url) {
       }
       const historyMatches = data.matches.filter(item => item.status === "published");
       const preview = left && right ? matchPreview(left, right, historyMatches, data.settings, data.profiles, data.weightParameters) : null;
-      if (preview) {
-        match.score = preview.score;
-        delete match.rawScore;
-        delete match.maxScore;
-        match.crossWeight = preview.crossWeight;
-        match.personalWeight = preview.personalWeight;
-        match.priorityWeight = preview.priorityWeight;
-        match.adjustedScore = preview.adjustedScore;
-        match.weightBreakdown = preview.weightBreakdown;
-        match.reasons = preview.reasons;
-        match.booleanGate = preview.booleanGate;
-        match.orientationWeight = preview.orientationWeight;
-        match.interestMatchCount = preview.interestMatchCount;
-        match.freeTextInterestHits = preview.freeTextInterestHits;
-        match.softViolationCount = preview.softViolationCount;
-        match.hardBlocked = preview.hardBlocked;
-      }
+      if (preview) applyPreview(match, preview);
       if (body.status) {
         const nextStatus = cleanText(body.status, 30);
         if (nextStatus === "published" && match.status !== "published") match.publishedAt = new Date().toISOString();
@@ -2767,7 +2749,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/day") {
     const day = currentMatchDay(new Date(), data.settings);
     const dayProfiles = data.profiles.filter(isActiveProfile);
-    const publishedMatchCount = historicalPairKeys(data.matches.filter(match => match.status === "published")).size;
+    const publishedMatchCount = data.matches.filter(match => match.status === "published").length;
     return sendJson(res, 200, {
       day,
       settings: cleanSettings(data.settings),

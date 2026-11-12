@@ -407,12 +407,11 @@ async function loadAdmin() {
 
 function candidateMatches() {
   const currentMatchDay = state.day?.id || "";
-  const publishedPairs = new Set(state.matches.filter(match => match.status === "published").map(matchPairKey));
+  // 冷却期内的重复配对已由服务端过滤
   return uniqueMatchesByPair(state.matches.filter(match =>
     match.status === "draft"
     && match.hardBlocked !== true
     && (!currentMatchDay || match.matchDay === currentMatchDay)
-    && !publishedPairs.has(matchPairKey(match))
   ));
 }
 
