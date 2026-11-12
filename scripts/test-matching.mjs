@@ -180,6 +180,25 @@ try {
   assert.ok(hasPair("old-draft-left", "new-right") >= 0, "新配对应进入候选");
   assert.ok(repeatDrafts.findIndex(match => (match.repeatedCount || 0) > 0) > repeatDrafts.findIndex(match => !match.repeatedCount), "新配对应排在重复配对之前");
 
+  const staleData = normalizeData({ profiles, matches: [], settings: {} });
+  ensureDailyDraftMatches(staleData);
+  const todayDrafts = staleData.matches.filter(match => match.status === "draft");
+  staleData.matches.push(...todayDrafts.map(match => ({ ...match, id: `stale-${match.id}`, matchDay: "2026-01-01", generatedFor: "2026-01-01", adjustedScore: 99 })));
+  const serialized = JSON.parse(refreshResponse.body).matches;
+  assert.ok(serialized.some(match => match.status === "draft" && match.matchDay === currentDay), "后台应返回当天候选");
+  await writeFile(dataFile, JSON.stringify({ ...updated, matches: staleData.matches }, null, 2));
+  const staleResponse = await new Promise((resolve, reject) => {
+    const staleRequest = Readable.from([]);
+    staleRequest.method = "GET";
+    staleRequest.headers = { authorization: "Bearer test-admin-token", host: "localhost" };
+    const result = { statusCode: 0, headers: {}, body: "" };
+    result.writeHead = statusCode => { result.statusCode = statusCode; };
+    result.end = body => { result.body = String(body || ""); resolve(result); };
+    handleApi(staleRequest, result, new URL("http://localhost/api/admin/matches")).catch(reject);
+  });
+  const staleList = JSON.parse(staleResponse.body).matches.filter(match => match.status === "draft" && match.matchDay === currentDay);
+  assert.equal(staleList.length, todayDrafts.length, "往日同一对的高分草稿不能挤掉当天候选");
+
   console.log(`matching regression passed: ${candidates.length} candidate(s)`);
 } finally {
   await rm(tempDir, { recursive: true, force: true });

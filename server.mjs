@@ -2264,7 +2264,8 @@ function serializeAdminMatches(matches, profiles, settings = defaultData.setting
     return matchTime(b) - matchTime(a);
   }).filter(match => {
     if (match.status !== "draft") return true;
-    const key = pairKey(match.leftId, match.rightId);
+    // 按天去重：往日残留的同一对草稿不能挤掉当天的草稿
+    const key = `${matchDayKey(match)}::${pairKey(match.leftId, match.rightId)}`;
     if (seenDraftPairs.has(key) || pairRepeatInfo(history, match.leftId, match.rightId).repeatFactor === 0) return false;
     seenDraftPairs.add(key);
     return true;
